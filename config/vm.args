@@ -1,0 +1,6 @@
+-sname front
+
+-setcookie front_cookie
+-pa /home/time/front-master/_build/default/rel/front/lib/*/ebin
++K true
++A30
