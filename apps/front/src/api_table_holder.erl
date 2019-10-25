@@ -3,7 +3,7 @@
 
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([start_link/0, stop/0, status/0, assert/3]).
+-export([start_link/0, stop/0,  status/0, assert/3, lookup/1]).
 
 -include("erws_console.hrl").
 
@@ -24,6 +24,8 @@ init([]) ->
                                       {password, Pwd},
                                       {database, Db}]),
         mysql:prepare(Pid, <<"insert into facts(Name, Value, Sign) VALUES(?, ?, ?)">>),
+        Query = <<"SELECT  Name, Value, ts FROM  facts WHERE Value like CONCAT('%', ? , '%')">>,
+        mysql:prepare(Pid, Query),
         ?LOG_DEBUG("connected to ~p ~n", [Pid]),
         {ok, #monitor{pid=Pid}
         }.
@@ -35,6 +37,13 @@ handle_call(status,_From ,State) ->
     ?LOG_DEBUG("get msg call ~p ~n", [status]),
     {reply, State, State};
 
+handle_call({ lookup, Body}, _From, State) ->
+    ?LOG_DEBUG("get msg call ~p ~n", [Body]),
+    Pid = State#monitor.pid, 
+    Query = <<"SELECT  Name, Value, ts FROM  facts WHERE Value like CONCAT('%', ? ,'%') ">>,
+    {ok, ColumnNames, Rows} = mysql:query(Pid, Query, [Body]),
+    ?LOG_DEBUG("found  ~p ~n", [{ColumnNames, Rows}]),
+    {reply, Rows, State};
 handle_call(Info,_From ,State) ->
     ?LOG_DEBUG("get msg call ~p ~n", [Info]),
     {reply, undefined , State}.
@@ -60,6 +69,10 @@ status() ->
         
 stop()->
         gen_server:call(?MODULE, stop).
+
+
+lookup(Body)->
+        gen_server:call(?MODULE, {lookup, Body}).
     
     
 assert(Name, Params, Sign)->

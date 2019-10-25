@@ -4,55 +4,54 @@
 
 
 % Behaviour cowboy_http_handler
--export([init/3, handle/2, terminate/3,
+-export([init/2, terminate/2,
          hexstring/1, get_key_dict/3, get_time/1, json_encode/1, json_decode/1, dict_to_json/1]).
 
-% Behaviour cowboy_http_websocket_handler
 
 
 
 % Called to know how to dispatch a new connection.
-init({tcp, http}, Req, Opts) ->
-    { Path, Req3} = cowboy_req:path_info(Req),
-    ?CONSOLE_LOG("Request: ~p ~n", [ {Req, Path, Opts} ]),
-    % we're not interested in serving any other content.
-    {ok, Req3, Opts}
+init(Req, Opts) ->
+    ?CONSOLE_LOG("~p",[Req]),    
+     Req4 = handle(Req, Opts),
+    {ok, Req4, Opts}
+    % we're not interested in serving any other content
 .
     
-terminate(_Req, _State, _Reason) ->
-    ok.
 
 headers_text_plain() ->
-        [ {<<"access-control-allow-origin">>, <<"*">>},  {<<"Content-Type">>, <<"text/plain">>} ].
+	#{<<"access-control-allow-origin">> => <<"*">>,  <<"Content-Type">> => <<"text/plain">>} .
         
 headers_text_html() ->
-        [ {<<"access-control-allow-origin">>, <<"*">>},  {<<"Content-Type">>, <<"text/html">>}  ].      
+	#{ <<"access-control-allow-origin">> => <<"*">>,  <<"Content-Type">> => <<"text/html">>}.      
 
 headers_json_plain() ->
-        [ {<<"access-control-allow-origin">>, <<"*">>},  {<<"Content-Type">>, <<"application/json">>} ].
+        #{ <<"access-control-allow-origin">> => <<"*">>,  <<"Content-Type">> => <<"application/json">>} .
         
 headers_png() ->
-        [ {<<"access-control-allow-origin">>, <<"*">>},
-          {<<"Cache-Control">>, <<"no-cache, must-revalidate">>},
-          {<<"Pragma">>, <<"no-cache">>},
-          {<<"Content-Type">>, <<"image/png">>} 
-        ].
+	#{<<"access-control-allow-origin">> => <<"*">>,
+         <<"Cache-Control">> => <<"no-cache, must-revalidate">>,
+         <<"Pragma">> => <<"no-cache">>,
+         <<"Content-Type">> => <<"image/png">>} 
+        .
                 
                 
         
 % Should never get here.
 handle(Req, State) ->
       ?CONSOLE_LOG("====================================~nrequest: ~p ~n", [Req]),
-      {Path, Req1} = cowboy_req:path_info(Req),
-      {ok, Body, Req2 } = cowboy_req:body(Req1),               
+      Path = cowboy_req:path_info(Req),
+      ?CONSOLE_LOG("====================================~npath: ~p ~n", [Path]),
+      {ok, Body, Req2 } = cowboy_req:read_body(Req),               
+      ?CONSOLE_LOG("====================================~nbody: ~p ~n", [Body]),
       case process(Path, Body, Req2, State) of
 	  {json, Json, ResReqLast, NewState }->
 		?CONSOLE_LOG("got request result: ~p~n", [Json]),
-		{ok, JsonReq} = cowboy_req:reply(200, headers_json_plain(), json_encode(Json), ResReqLast),
-		{ok, JsonReq, NewState};
+		cowboy_req:reply(200, headers_json_plain(), json_encode(Json), ResReqLast);
+		%{ok, JsonReq, NewState};
           {raw_answer, {Code, Binary, Headers }, ResReqLast, NewState } ->
-		{ok, RawReq} = cowboy_req:reply(Code, Headers, Binary, ResReqLast),
-		{ok, RawReq, NewState}
+
+		cowboy_req:reply(Code, Headers, Binary, ResReqLast)
       end.      
 
 terminate(_Req, _State) -> ok.
@@ -79,9 +78,19 @@ check_sign({Sign, LocalKey}, Body, State)->
         _ -> false
    end
 .
+
+process([<<"lookup">>],  Body, Req, State )->
+    ?CONSOLE_LOG("process search from  ~p ~n",[Body]),
+    List = api_table_holder:lookup(Body),
+    Res = lists:map(fun([Name, Value, Ets])->   {[{<<"type">>, Name}, {<<"value">>, json_decode(Value)}, {<<"date">>,  list_to_binary(format_date(Ets)) }]}   end,  List),
+    ListJson = {[{<<"status">>, true}, {<<"result">>, Res}]},
+    {json, ListJson, Req, State}
+    
+;
 process([<<"assert">>, Name],  Body, Req, State )->
+    ?CONSOLE_LOG("process request from ~p ~p ~n",[Name, Body]),
     Sign = generate_key(Body),
-    api_table_hodler:add(Name, Body, Sign),
+    api_table_holder:assert(Name, Body, list_to_binary(Sign)),
     true_response(Req, State)
 ;    
 process(Path, _Body, Req, State)->
@@ -112,27 +121,22 @@ get_key_dict(SessionObj,Key, Default)->
         error -> Default
     end
 .
+format_date({{Year, Month, Day},{Hour, Minute, Second}})->
+   lists:flatten(io_lib:format("~4..0w-~2..0w-~2..0wT~2..0w:~2..0w:~2..0w",[Year,Month,Day,Hour,Minute,Second])).
+
 
      
 generate_key(Body)->
-        hexstring( crypto:hash(sha256, Body/binary)  ) 
+        D = crypto:hash(sha256, Body),
+
+        hexstring( D  ) 
+
 .
      
 generate_key(Salt, Body)->
         hexstring( crypto:hash(sha256, <<Salt/binary, Body/binary >>)  ) 
 .
 
-% [
-%         {<<"logged">>, true},
-%         {<<"x-cache">>, true},
-%         {<<"status">>, true},
-%         {<<"sessionid">>, SessionKeyCustom},
-%         {<<"ui_settings">>, UiSettingsJ },
-%         {<<"ui_msg">>, erws_api:get_key_dict(SessionObj, <<"ui_msg">>, <<"">> ) },
-%         {<<"user_custom_id">>, erws_api:get_key_dict(SessionObj, <<"user_custom_id">>, <<>>) },
-%         {<<"use_f2a">>, erws_api:get_key_dict(SessionObj, <<"use_f2a">>, false) },
-%         {<<"deal_comission">>, erws_api:get_key_dict(SessionObj, <<"deal_comission_show">>, <<"0.05">>) }
-%         ],	
 
 dict_to_json(Dict)->
 	 List = dict:to_list(Dict),

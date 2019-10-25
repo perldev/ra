@@ -1,14 +1,14 @@
 
 
 
-%-define(DEBUG,1).
+-define(DEBUG,1).
 
--define(TURNOFFCACHE,1).
+%-define(TURNOFFCACHE,1).
 
 -ifdef(DEBUG).
 
--define('CONSOLE_LOG'(Str, Params),  lager:info(Str, Params) ).
--define('LOG_DEBUG'(Str, Params), lager:debug(Str, Params) ).
+-define('CONSOLE_LOG'(Str, Params),  io:format(Str, Params) ).
+-define('LOG_DEBUG'(Str, Params), io:format(Str, Params) ).
 
 
 -else.
