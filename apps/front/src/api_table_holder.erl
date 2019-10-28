@@ -28,7 +28,7 @@ init([]) ->
         mysql:prepare(Pid, Query),
         Query1 = <<"SELECT  Name, Value, ts FROM  facts WHERE 1">>,
         mysql:prepare(Pid, Query1),
-        {ok, Erlog} = elog:new(erlog_db_ets, ?ETS_NAME),
+        {ok, Erlog} = erlog:new(erlog_db_ets, ?ETS_NAME),
         ?LOG_DEBUG("connected to ~p ~n", [Pid]),
         {ok, #monitor{pid=Pid, 
                       erlog=Erlog}
@@ -52,7 +52,7 @@ handle_call({ lookup, Body}, _From, State) ->
 handle_call(flush_erlog, _From ,State) ->
     ?LOG_DEBUG("start loading from   ~n", []),
     ets:delete(?ETS_NAME),
-    {ok, Erlog} = elog:new(erlog_db_ets, ?ETS_NAME),
+    {ok, Erlog} = erlog:new(erlog_db_ets, ?ETS_NAME),
     {reply, ok, State#monitor{erlog=Erlog}};
 handle_call(load_erlog, _From ,State) ->
     ?LOG_DEBUG("start loading from    ~n", []),
