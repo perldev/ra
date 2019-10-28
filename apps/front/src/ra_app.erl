@@ -52,6 +52,7 @@ start(_StartType, _StartArgs) ->
 	{ok, _} = cowboy:start_clear(http, [{port, Port}], #{
 		env => #{dispatch => Dispatch}
 	}),
+       io:format("cowboy has been started",[]),    
 
 
 

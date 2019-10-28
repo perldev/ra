@@ -25,7 +25,8 @@
 
 
 -record(monitor,{
-                 pid
+                 pid,
+                 erlog
                 }).
 
 

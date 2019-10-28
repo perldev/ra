@@ -5,7 +5,13 @@
 
 % Behaviour cowboy_http_handler
 -export([init/2, terminate/2,
-         hexstring/1, get_key_dict/3, get_time/1, json_encode/1, json_decode/1, dict_to_json/1]).
+         hexstring/1, 
+         get_key_dict/3,
+         get_time/1,
+         json_encode/1, 
+         json_decode/1, 
+         dict_to_json/1, 
+         format_date/1]).
 
 
 
@@ -78,6 +84,11 @@ check_sign({Sign, LocalKey}, Body, State)->
         _ -> false
    end
 .
+process([<<"load">>],  Body, Req, State )->
+    ?CONSOLE_LOG("process load code from  ~p ~n", [Body]),
+    api_table_holder:erlog_load_code(Body),
+    true_response(Req, State)    
+;
 
 process([<<"lookup">>],  Body, Req, State )->
     ?CONSOLE_LOG("process search from  ~p ~n",[Body]),
@@ -122,7 +133,7 @@ get_key_dict(SessionObj,Key, Default)->
     end
 .
 format_date({{Year, Month, Day},{Hour, Minute, Second}})->
-   lists:flatten(io_lib:format("~4..0w-~2..0w-~2..0wT~2..0w:~2..0w:~2..0w",[Year,Month,Day,Hour,Minute,Second])).
+   lists:flatten(io_lib:format("~4..0w/~2..0w/~2..0w ~2..0w:~2..0w:~2..0w",[Year,Month,Day,Hour,Minute,Second])).
 
 
      
