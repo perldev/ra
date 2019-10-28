@@ -84,12 +84,38 @@ check_sign({Sign, LocalKey}, Body, State)->
         _ -> false
    end
 .
+
+process([<<"once">>, Name],  Body, Req, State)->
+    ?CONSOLE_LOG("call aim ~p ~n", [Body]),
+%     {fact,1,2,3,4,5}
+%     [ {[{<<"name">>,<<"X">>}]}, 1,3,4]
+    Res = lists:map(fun(Elem, Name)->  case  Elem of 
+                                          {[{<<"name">>, NameX}]} -> { to_atom(NameX) };
+                                          Value -> Value   
+                                       end 
+                    end, 
+                    jiffy:decode(Body) ),
+    Atom = to_atom(Name),
+    CallBody = list_to_tuple([Atom|Res]),
+    case api_table_holder:erlog_once(CallBody) of
+        {error, Error}->
+            Res = erlog_io:write1(Error),
+            ListJson = {[{<<"status">>, <<"error">>}, {<<"description">>, to_binary(Res) }]},
+            {json, ListJson, Req, State};
+        fail ->
+           false_response(Req, State);
+        Success ->
+                ResultL = lists:map(fun({NameX, Val}) ->
+                                          {[{to_binary(NameX), Val}]}
+                                    end, Success),
+                {json, ResultL, Req, State} 
+    end
+;
 process([<<"load">>],  Body, Req, State )->
     ?CONSOLE_LOG("process load code from  ~p ~n", [Body]),
     api_table_holder:erlog_load_code(Body),
     true_response(Req, State)    
 ;
-
 process([<<"lookup">>],  Body, Req, State )->
     ?CONSOLE_LOG("process search from  ~p ~n",[Body]),
     List = api_table_holder:lookup(Body),
@@ -211,3 +237,19 @@ hexstring(<<X:256/big-unsigned-integer>>) ->
 hexstring(<<X:512/big-unsigned-integer>>) ->
     lists:flatten(io_lib:format("~128.16.0b", [X])).
 
+    
+to_atom(Name) when is_atom(Name) ->
+   Name;
+to_atom(Name) when is_binary(Name) ->
+   to_atom(binary_to_list(Name));
+to_atom(Name) when is_list(Name) ->
+   to_atom(list_to_atom(Name)).
+
+   
+to_binary(Name) when is_binary(Name) ->
+   Name;
+to_binary(Name) when is_list(Name) ->
+   to_binary(list_to_binary(Name));
+to_binary(Name) when is_atom(Name) ->
+   to_binary(atom_to_list(Name)).   
+   

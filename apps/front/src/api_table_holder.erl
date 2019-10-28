@@ -3,7 +3,7 @@
 
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([start_link/0, stop/0,  status/0, assert/3, lookup/1, load_from_db/0, erlog_call/1, erlog_load_code/1]).
+-export([start_link/0, stop/0,  status/0, assert/3, lookup/1, load_from_db/0, erlog_once/1, erlog_load_code/1]).
 
 -include("erws_console.hrl").
 
@@ -62,19 +62,37 @@ handle_call(load_erlog, _From ,State) ->
     Erlog = State#monitor.erlog,
 %   Res = lists:map(fun([Name, Value, Ets])->   {[{<<"type">>, Name}, {<<"value">>, json_decode(Value)}, {<<"date">>,  list_to_binary(format_date(Ets)) }]}   end,  List),
     NewErl  = lists:foldl(fun([Name, Value, Ets], Accum)->
-                            DecodeRule = erws_api:json_decode(Value),
-                            NewEts = erws_api:format_date(Ets),
-                            Functor = list_to_atom(binary_to_list(Name)),
-                            NewRuleL = [Functor, NewEts|DecodeRule],
-                            NewRule= list_to_tuple(NewRuleL),
-                            Goal  = {assert, NewRule},
-%                           Goal  = {assert,{fact,1,2,3,4,5}}
-                            { {succeed,[]}, NewErl} = erlog:prove(Goal, Accum), 
-                            NewErl 
+                            case catch erws_api:json_decode(Value) of 
+                              {'EXIT', Error}->
+                                    ?LOG_DEBUG("cant process rule  ~p ~n ~p", [{Name, Value, Ets}, Error]),
+                                    Accum;
+                              DecodeRule -> 
+                                    NewEts = erws_api:format_date(Ets),
+                                    Functor = list_to_atom(binary_to_list(Name)),
+                                    NewRuleL = [Functor, NewEts|DecodeRule],
+                                    NewRule= list_to_tuple(NewRuleL),
+                                    Goal  = {assert, NewRule},
+        %                           Goal  = {assert,{fact,1,2,3,4,5}}
+                                    { {succeed,[]}, NewErl} = erlog:prove(Goal, Accum), 
+                                    NewErl 
+                            end
+                            
                        end, Erlog, Rows),
-                       
-    {reply, ok, State#monitor{erlog=NewErl}};
-handle_call({erlog_code, Body},_From, State )->
+    {reply, ok, State#monitor{erlog=NewErl}};    
+handle_call({once, Goal},_From, State )->
+  Erlog = State#monitor.erlog,
+  case erlog:prove(Goal, Erlog) of
+      {{succeed,Vs}, NewErl}->
+            {reply, Vs, State#monitor{erlog=NewErl}};
+      {fail, NewErl}->
+            {reply, false, State#monitor{erlog=NewErl}};
+      {{error,Error}, NewErl}->
+            {reply, {error, Error}, State#monitor{erlog=NewErl}};
+      {{'EXIT',Error}, NewErl}->
+            {reply, {error, Error}, State#monitor{erlog=NewErl}}
+  end
+; 
+handle_call({erlog_code, Body}, _From, State )->
   File = tmp_export_file(),
   file:write_file(File, Body),
   Erlog = State#monitor.erlog,
@@ -114,8 +132,8 @@ status() ->
 stop()->
         gen_server:call(?MODULE, stop).
 
-erlog_call(User)->
-    ok.
+erlog_once(Msg)->
+        gen_server:call(?MODULE, {once, Msg}).
         
 load_from_db()->
     gen_server:call(?MODULE, load_erlog).
