@@ -73,7 +73,7 @@ handle_call(load_erlog, _From ,State) ->
                                     NewRule= list_to_tuple(NewRuleL),
                                     Goal  = {assert, NewRule},
         %                           Goal  = {assert,{fact,1,2,3,4,5}}
-                                    { {succeed,[]}, NewErl} = erlog:prove(Goal, Accum), 
+                                    { {succeed, _}, NewErl} = erlog:prove(Goal, Accum), 
                                     NewErl 
                             end
                             
@@ -81,6 +81,7 @@ handle_call(load_erlog, _From ,State) ->
     {reply, ok, State#monitor{erlog=NewErl}};    
 handle_call({once, Goal},_From, State )->
   Erlog = State#monitor.erlog,
+  ?LOG_DEBUG("start coal from  ~p ~n", [Goal]),
   case erlog:prove(Goal, Erlog) of
       {{succeed,Vs}, NewErl}->
             {reply, Vs, State#monitor{erlog=NewErl}};
@@ -94,12 +95,13 @@ handle_call({once, Goal},_From, State )->
 ; 
 handle_call({erlog_code, Body}, _From, State )->
   File = tmp_export_file(),
-  file:write_file(File, Body),
+  %%HACK add \n at the end of file for correct parsing
+  file:write_file(File, <<Body/binary, "\n\n\n">>), 
   Erlog = State#monitor.erlog,
   {ok, Terms } = erlog_io:read_file(File),
   NewErl =  lists:foldl(fun(Elem, Erl )->    
                             Goal  = {assert, Elem},
-                            { {succeed,[]}, NewErl} = erlog:prove(Goal, Erl), 
+                            { {succeed,_}, NewErl} = erlog:prove(Goal, Erl), 
                             NewErl end, Erlog, Terms),
   {reply, ok, State#monitor{erlog=NewErl}}
 ; 

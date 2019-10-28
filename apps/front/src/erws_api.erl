@@ -89,7 +89,7 @@ process([<<"once">>, Name],  Body, Req, State)->
     ?CONSOLE_LOG("call aim ~p ~n", [Body]),
 %     {fact,1,2,3,4,5}
 %     [ {[{<<"name">>,<<"X">>}]}, 1,3,4]
-    Res = lists:map(fun(Elem, Name)->  case  Elem of 
+    Res = lists:map(fun(Elem)->  case  Elem of 
                                           {[{<<"name">>, NameX}]} -> { to_atom(NameX) };
                                           Value -> Value   
                                        end 
@@ -97,18 +97,19 @@ process([<<"once">>, Name],  Body, Req, State)->
                     jiffy:decode(Body) ),
     Atom = to_atom(Name),
     CallBody = list_to_tuple([Atom|Res]),
+    ?CONSOLE_LOG("call aim ~p ~n", [CallBody]),
     case api_table_holder:erlog_once(CallBody) of
         {error, Error}->
-            Res = erlog_io:write1(Error),
-            ListJson = {[{<<"status">>, <<"error">>}, {<<"description">>, to_binary(Res) }]},
+            ErrorDesc = erlog_io:write1(Error),
+            ListJson = {[{<<"status">>, <<"error">>}, {<<"description">>, to_binary(ErrorDesc) }]},
             {json, ListJson, Req, State};
-        fail ->
+        false ->
            false_response(Req, State);
         Success ->
                 ResultL = lists:map(fun({NameX, Val}) ->
                                           {[{to_binary(NameX), Val}]}
                                     end, Success),
-                {json, ResultL, Req, State} 
+                {json, {[{<<"status">>, true}, {<<"result">>, ResultL}]}, Req, State} 
     end
 ;
 process([<<"load">>],  Body, Req, State )->
