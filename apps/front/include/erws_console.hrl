@@ -26,7 +26,8 @@
 
 -record(monitor,{
                  pid,
-                 erlog
+                 erlog, 
+                 db_loaded=false
                 }).
 
 

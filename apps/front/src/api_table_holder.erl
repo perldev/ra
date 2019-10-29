@@ -103,7 +103,7 @@ handle_call({erlog_code, Body}, _From, State )->
                             Goal  = {assert, Elem},
                             { {succeed,_}, NewErl} = erlog:prove(Goal, Erl), 
                             NewErl end, Erlog, Terms),
-  {reply, ok, State#monitor{erlog=NewErl}}
+  {reply, ok, State#monitor{erlog=NewErl, db_loaded=true}}
 ; 
 
 handle_call(Info,_From ,State) ->
@@ -113,6 +113,26 @@ handle_call(Info,_From ,State) ->
     
 
 %%HERE we receive tasks from common ajax
+handle_cast({add, Key, Params, Sign}, MyState=#monitor{db_loaded=true}) ->
+    Pid = MyState#monitor.pid, 
+    Query = <<"insert into facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
+    ok = mysql:query(Pid, Query, [Key, Params, Sign]),
+    Erlog = MyState#monitor.erlog,
+    Ets = erlang:localtime(),
+    case catch erws_api:json_decode(Params) of 
+                              {'EXIT', Error}->
+                                    ?LOG_DEBUG("cant process rule  ~p ~n ~p", [{Key, Params, Ets}, Error]),
+                                     {noreply, MyState#monitor{erlog=Erlog}};
+                              DecodeRule -> 
+                                    NewEts = erws_api:format_date(Ets),
+                                    Functor = list_to_atom(binary_to_list(Key)),
+                                    NewRuleL = [Functor, NewEts|DecodeRule],
+                                    NewRule= list_to_tuple(NewRuleL),
+                                    Goal  = {assert, NewRule},
+                                    { {succeed, _}, NewErl} = erlog:prove(Goal, Erlog), 
+                                    {noreply, MyState#monitor{erlog=NewErl}}
+    end
+;
 handle_cast({add, Key, Params, Sign}, MyState) ->
     Pid = MyState#monitor.pid, 
     Query = <<"insert into facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
