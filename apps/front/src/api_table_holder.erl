@@ -166,7 +166,6 @@ handle_cast(load_from_db, State) ->
                                     NewRuleL = [Functor, NewEts|DecodeRule],
                                     NewRule= list_to_tuple(NewRuleL),
                                     Goal  = {assert, NewRule},
-        %                           Goal  = {assert,{fact,1,2,3,4,5}}
                                     { {succeed, _}, NewErl} = erlog:prove(Goal, Accum), 
                                     NewErl 
                             end

@@ -112,6 +112,37 @@ process([<<"once">>, Name],  Body, Req, State)->
                 {json, {[{<<"status">>, true}, {<<"result">>, ResultL}]}, Req, State} 
     end
 ;
+
+process([<<"add_consistent">>],  _Body, Req, State )->
+    ?CONSOLE_LOG("process load  all from dump ~n", []),
+    api_table_holder:add_consisten_knowledge(),
+    true_response(Req, State)    
+;
+process([<<"dump_db">>, FileName],  _Body, Req, State )->
+    ?CONSOLE_LOG("process load  all from dump ~n", []),
+    api_table_holder:save_db(FileName),
+    true_response(Req, State)    
+;
+process([<<"dump_db">>],  _Body, Req, State )->
+    ?CONSOLE_LOG("process load  all from dump ~n", []),
+    api_table_holder:save_db(),
+    true_response(Req, State)    
+;
+process([<<"load_from_dump">>],  _Body, Req, State )->
+    ?CONSOLE_LOG("process load  all from dump ~n", []),
+    api_table_holder:load_from_dump(),
+    true_response(Req, State)    
+;
+process([<<"flush">>],  _Body, Req, State )->
+    ?CONSOLE_LOG("process load remove all temp ~n", []),
+    api_table_holder:flush_erlog(),
+    true_response(Req, State)    
+;
+process([<<"load_from_db">>],  _Body, Req, State )->
+    ?CONSOLE_LOG("process load code from db   ~n", []),
+    api_table_holder:load_from_db(),
+    true_response(Req, State)    
+;
 process([<<"load">>],  Body, Req, State )->
     ?CONSOLE_LOG("process load code from  ~p ~n", [Body]),
     api_table_holder:erlog_load_code(Body),
@@ -166,7 +197,6 @@ format_date({{Year, Month, Day},{Hour, Minute, Second}})->
      
 generate_key(Body)->
         D = crypto:hash(sha256, Body),
-
         hexstring( D  ) 
 
 .
