@@ -171,7 +171,7 @@ handle_cast(load_from_db, State) ->
                             end
                        end, Erlog, Rows),
     {noreply, State#monitor{erlog1=NewErl, db_loaded=true}};    
-handle_cast({add, Key, Params, Sign}, MyState=#monitor{db_loaded=true}) ->
+handle_cast({add, Key, Params, Sign}, MyState) ->
     ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key,Params}]),
     Pid = MyState#monitor.pid, 
     Query = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
@@ -193,14 +193,7 @@ handle_cast({add, Key, Params, Sign}, MyState=#monitor{db_loaded=true}) ->
                                     { {succeed, _}, NewErl} = erlog:prove(Goal, Erlog), 
                                     { {succeed, _}, NewErl1} = erlog:prove(Goal, Erlog1), 
                                     {noreply, MyState#monitor{erlog=NewErl, erlog1=NewErl1}}
-    end
-;
-handle_cast({add, Key, Params, Sign}, MyState) ->
-    Pid = MyState#monitor.pid, 
-    Query = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
-    ok = mysql:query(Pid, Query, [Key, Params, Sign]),
-    {noreply, MyState}
-.
+    end.
 
 handle_info(Message,  State)->
     ?LOG_DEBUG("undefined child process ~p ~n", [Message]),
