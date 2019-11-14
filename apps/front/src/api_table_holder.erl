@@ -128,9 +128,9 @@ handle_call(Info,_From ,State) ->
 %   1) load from dump
 handle_cast( {erlog_code, Terms}, State)->
    Erlog = State#monitor.erlog,
+   Db = get_inner_db(Erlog),
    Pid = spawn_link(fun() ->   lists:foreach(fun(Elem)->   
                                                 ?LOG_DEBUG("process loading ~p \n", [Elem]),
-                                                Db = get_inner_db(Erl),
                                                 Res = erlog_int:asserta_clause(Elem, Db),
                                                 ?LOG_DEBUG("result ~p \n", [Res])
                                                  end,
