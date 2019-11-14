@@ -128,16 +128,16 @@ handle_call(Info,_From ,State) ->
 %   1) load from dump
 handle_cast( {erlog_code, Terms}, State)->
    Erlog = State#monitor.erlog,
-   Pid = spawn_link(fun() ->   lists:foldl(fun(Elem, Erl )->    
-                                                Goal  = {assert, Elem},
-                                                ?LOG_DEBUG("process loading ~p \n", [Goal]),
-                                                { {succeed, Res}, NewErl} = erlog:prove(Goal, Erl), 
-                                                ?LOG_DEBUG("result  ~p \n", [Res]),
-                                                NewErl end, Erlog, 
+   Pid = spawn_link(fun() ->   lists:foreach(fun(Elem, Erl )->   
+                                                ?LOG_DEBUG("process loading ~p \n", [Elem]),
+                                                Db = get_inner_db(Erl),
+                                                Res = erlog_int:asserta_clause(Elem, Db),
+                                                ?LOG_DEBUG("result ~p \n", [Res])
+                                                 end, Erlog, 
                                                 Terms) 
                                            end),
     ?LOG_DEBUG("start loading ~p \n", [Pid]),
-    {noreply, State#monitor{erlog1=Erlog, db_loaded=true}}
+    {noreply, State#monitor{erlog=Erlog}}
 ;
 handle_cast({load_from_dump, FileName}, State) ->
     ets:delete(?ETS_NAME1),
@@ -219,6 +219,10 @@ terminate(_Reason, State) ->
     ets:tab2file(Tab , State#monitor.dump_name),
     terminated.
 
+get_inner_db(Erl0)->
+    MyErlog = element(3, Erl0),
+     element(5, MyErlog).
+     
 get_inner_ets(Erl0)->
     MyErlog = element(3, Erl0),
     Db  = element(5, MyErlog),
