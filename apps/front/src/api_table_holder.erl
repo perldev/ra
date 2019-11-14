@@ -126,7 +126,19 @@ handle_call(Info,_From ,State) ->
 %%  2) dump_db
 % and next time  for saving time 
 %   1) load from dump
-
+handle_cast( {erlog_code, Terms}, State)->
+   Erlog = State#monitor.erlog,
+   Pid = spawn_link(fun() ->   lists:foldl(fun(Elem, Erl )->    
+                                                Goal  = {assert, Elem},
+                                                ?LOG_DEBUG("process loading ~p \n", [Goal]),
+                                                { {succeed, Res}, NewErl} = erlog:prove(Goal, Erl), 
+                                                ?LOG_DEBUG("result  ~p \n", [Res]),
+                                                NewErl end, Erlog, 
+                                                Terms) 
+                                           end),
+    ?LOG_DEBUG("start loading ~p \n", [Pid]),
+    {noreply, State#monitor{erlog1=Erlog, db_loaded=true}}
+;
 handle_cast({load_from_dump, FileName}, State) ->
     ets:delete(?ETS_NAME1),
     {ok, Erlog} = erlog:new(erlog_db_ets, FileName),
@@ -147,6 +159,7 @@ handle_cast({dump_db, FileName}, State) ->
     ?LOG_DEBUG("saved normal \n", []),
     {noreply, State}
 ;
+
 handle_cast(load_from_db, State) ->
     ?LOG_DEBUG("start loading from    ~n", []),
     Pid = State#monitor.pid, 
@@ -248,11 +261,15 @@ add_consisten_knowledge()->
 
     
 erlog_load_code(Code)->
-    gen_server:call(?MODULE, {erlog_code, Code}).
+  File = tmp_export_file(),
+  %%HACK add \n at the end of file for correct parsing
+  file:write_file(File, <<Code/binary, "\n\n\n">>), 
+  {ok, Terms } = erlog_io:read_file(File),  
+  gen_server:cast(?MODULE, {erlog_code, Terms}).
 
     
 lookup(Body)->
-        gen_server:call(?MODULE, {lookup, Body}).
+    gen_server:call(?MODULE, {lookup, Body}).
     
     
 assert(Name, Params, Sign)->
