@@ -162,8 +162,16 @@ process([<<"lookup">>],  Body, Req, State )->
 process([<<"assert">>, Name],  Body, Req, State )->
     ?CONSOLE_LOG("process request from ~p ~p ~n",[Name, Body]),
     Sign = generate_key(Body),
-    api_table_holder:assert(Name, Body, list_to_binary(Sign)),
-    true_response(Req, State)
+    case catch erws_api:json_decode(Body) of 
+            {'EXIT', Error}->
+                    ?LOG_DEBUG("cant process rule  ~p ~n ~p", [{Name, Body}, Error]),
+                    ListJson = {[{<<"status">>, true}, {<<"decription">>, <<"malformed json">>}]},
+                    {json, ListJson, Req, State};
+            DecodeRule -> 
+                DecodeRuleL = lists:map(fun convert/1, DecodeRule),
+                api_table_holder:assert(Name, DecodeRuleL, Body, list_to_binary(Sign)),
+                true_response(Req, State)
+    end
 ;    
 process(Path, _Body, Req, State)->
      ?CONSOLE_LOG("undefined request from ~p ~p ~n",[Path, Req]),
@@ -197,6 +205,8 @@ format_date({{Year, Month, Day},{Hour, Minute, Second}})->
    lists:flatten(io_lib:format("~4..0w/~2..0w/~2..0w ~2..0w:~2..0w:~2..0w",[Year,Month,Day,Hour,Minute,Second])).
 
 
+   
+   
      
 generate_key(Body)->
         D = crypto:hash(sha256, Body),
@@ -271,6 +281,15 @@ hexstring(<<X:256/big-unsigned-integer>>) ->
 hexstring(<<X:512/big-unsigned-integer>>) ->
     lists:flatten(io_lib:format("~128.16.0b", [X])).
 
+    
+convert(Elem) when is_binary(Elem)->
+    to_list(Elem);
+convert(Elem) when is_list(Elem)->
+    Elem;    
+convert(Elem) when is_integer(Elem)->
+    Elem;
+convert(Elem) when is_float(Elem)->
+    Elem.    
     
 to_atom(Name) when is_atom(Name) ->
    Name;

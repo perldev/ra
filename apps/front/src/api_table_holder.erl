@@ -2,7 +2,7 @@
 -behaviour(gen_server).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([start_link/0, stop/0,  status/0, assert/3, lookup/1,
+-export([start_link/0, stop/0,  status/0, assert/4, lookup/1,
          save_db/1, save_db/0, 
          load_from_dump/1, load_from_db/0, 
          flush_erlog/0, add_consisten_knowledge/0,
@@ -186,29 +186,23 @@ handle_cast(load_from_db, State) ->
                             end
                        end, Erlog, Rows),
     {noreply, State#monitor{erlog1=NewErl, db_loaded=true}};    
-handle_cast({add, Key, Params, Sign}, MyState) ->
-    ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key,Params}]),
+handle_cast({add, Key, Params, Raw, Sign}, MyState) ->
+    ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
     Pid = MyState#monitor.pid, 
     Query = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
-    ok = mysql:query(Pid, Query, [Key, Params, Sign]),
+    ok = mysql:query(Pid, Query, [Key, Raw, Sign]),
     Erlog = MyState#monitor.erlog,
     Erlog1 = MyState#monitor.erlog1,
 
     Ets = erlang:localtime(),
-    case catch erws_api:json_decode(Params) of 
-                              {'EXIT', Error}->
-                                    ?LOG_DEBUG("cant process rule  ~p ~n ~p", [{Key, Params, Ets}, Error]),
-                                     {noreply, MyState#monitor{erlog=Erlog}};
-                              DecodeRule -> 
-                                    NewEts = erws_api:format_date(Ets),
-                                    Functor = list_to_atom(binary_to_list(Key)),
-                                    NewRuleL = [Functor, NewEts|DecodeRule],
-                                    NewRule= list_to_tuple(NewRuleL),
-                                    Goal  = {assert, NewRule},
-                                    { {succeed, _}, NewErl} = erlog:prove(Goal, Erlog), 
-                                    { {succeed, _}, NewErl1} = erlog:prove(Goal, Erlog1), 
-                                    {noreply, MyState#monitor{erlog=NewErl, erlog1=NewErl1}}
-    end.
+    NewEts = erws_api:format_date(Ets),
+    Functor = list_to_atom(binary_to_list(Key)),
+    NewRuleL = [Functor, NewEts|Params],
+    NewRule= list_to_tuple(NewRuleL),
+    Goal  = {assert, NewRule},
+    { {succeed, _}, NewErl} = erlog:prove(Goal, Erlog), 
+    { {succeed, _}, NewErl1} = erlog:prove(Goal, Erlog1), 
+    {noreply, MyState#monitor{erlog=NewErl, erlog1=NewErl1}}.
 
 handle_info(Message,  State)->
     ?LOG_DEBUG("undefined child process ~p ~n", [Message]),
@@ -278,8 +272,8 @@ lookup(Body)->
     gen_server:call(?MODULE, {lookup, Body}).
     
     
-assert(Name, Params, Sign)->
-    gen_server:cast(?MODULE, {add, Name, Params, Sign}).
+assert(Name, Params, Raw, Sign)->
+    gen_server:cast(?MODULE, {add, Name, Params, Raw, Sign}).
 
 
 id_generator()->
