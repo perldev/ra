@@ -91,14 +91,17 @@ process([<<"once">>, Name],  Body, Req, State)->
 %     [ {[{<<"name">>,<<"X">>}]}, 1,3,4]
     Res = lists:map(fun(Elem)->  case  Elem of 
                                           {[{<<"name">>, NameX}]} -> { to_atom(NameX) };
-                                          Value -> Value   
+                                          Value -> to_list(Value)   
                                        end 
                     end, 
                     jiffy:decode(Body) ),
     Atom = to_atom(Name),
     CallBody = list_to_tuple([Atom|Res]),
     ?CONSOLE_LOG("call aim ~p ~n", [CallBody]),
-    case api_table_holder:erlog_once(CallBody) of
+    Result = api_table_holder:erlog_once(CallBody),
+    ?CONSOLE_LOG("result aim ~p ~n", [Result]),
+
+    case Result of
         {error, Error}->
             ErrorDesc = erlog_io:write1(Error),
             ListJson = {[{<<"status">>, <<"error">>}, {<<"description">>, to_binary(ErrorDesc) }]},
@@ -107,7 +110,7 @@ process([<<"once">>, Name],  Body, Req, State)->
            false_response(Req, State);
         Success ->
                 ResultL = lists:map(fun({NameX, Val}) ->
-                                          {[{to_binary(NameX), Val}]}
+                                          {[{to_binary(NameX),  to_binary(Val) }]}
                                     end, Success),
                 {json, {[{<<"status">>, true}, {<<"result">>, ResultL}]}, Req, State} 
     end
@@ -276,11 +279,16 @@ to_atom(Name) when is_binary(Name) ->
 to_atom(Name) when is_list(Name) ->
    to_atom(list_to_atom(Name)).
 
+to_list(Name) when is_binary(Name)->
+    unicode:characters_to_list(Name);
+to_list(Name) when is_list(Name)->
+    Name.
    
 to_binary(Name) when is_binary(Name) ->
    Name;
 to_binary(Name) when is_list(Name) ->
    to_binary(list_to_binary(Name));
 to_binary(Name) when is_atom(Name) ->
-   to_binary(atom_to_list(Name)).   
+   to_binary(atom_to_list(Name)).
+   
    
