@@ -34,7 +34,7 @@ init([]) ->
         Query1 = <<"SELECT  Name, Value, ts FROM  facts WHERE 1">>,
         mysql:prepare(Pid, Query1),
         {ok, Erlog} = erlog:new(erlog_db_ets, ?ETS_NAME),
-        {ok, _} = ets:new(?UNIQ, [public, set]),
+        ets:new(?UNIQ, [public, set]),
 
         case   application:get_env(dump_name) of 
            undefined->
