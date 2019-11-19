@@ -12,7 +12,6 @@
 
 -define(ETS_NAME, ets_name1).
 -define(ETS_NAME1, ets_name).
-
            
 start_link() ->
           gen_server:start_link({local, ?MODULE},?MODULE, [],[]).
@@ -35,6 +34,8 @@ init([]) ->
         Query1 = <<"SELECT  Name, Value, ts FROM  facts WHERE 1">>,
         mysql:prepare(Pid, Query1),
         {ok, Erlog} = erlog:new(erlog_db_ets, ?ETS_NAME),
+        {ok, _} = ets:new(?UNIQ, [public, set]),
+
         case   application:get_env(dump_name) of 
            undefined->
                 {ok, Erlog1} = erlog:new(erlog_db_ets, ?ETS_NAME1),
@@ -272,8 +273,32 @@ lookup(Body)->
     gen_server:call(?MODULE, {lookup, Body}).
     
     
-assert(Name, Params, Raw, Sign)->
-    gen_server:cast(?MODULE, {add, Name, Params, Raw, Sign}).
+assert(Key, Params, Raw, Sign)->
+    case ets:lookup(?UNIQ, Sign) of
+        [] ->  
+            ets:insert(?UNIQ, {Sign, 1}),
+            MyState = api_table_holder:status(),
+            Erlog = MyState#monitor.erlog,
+            Erlog1 = MyState#monitor.erlog1,
+            Db = get_inner_db(Erlog),
+            Db1 = get_inner_db(Erlog1),
+            ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
+            Pid = MyState#monitor.pid, 
+            Query = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
+            ok = mysql:query(Pid, Query, [Key, Raw, Sign]),
+            Ets = erlang:localtime(),
+            NewEts = erws_api:format_date(Ets),
+            Functor = list_to_atom(binary_to_list(Key)),
+            NewRuleL = [Functor, NewEts|Params],
+            NewRule = list_to_tuple(NewRuleL),
+            Res = erlog_int:asserta_clause(NewRule, Db),
+            ?LOG_DEBUG("result erlog 1 ~p \n", [Res]),
+            Res1 = erlog_int:asserta_clause(NewRule, Db1),
+            ?LOG_DEBUG("result erlog 2 ~p \n", [Res1]),
+            true;        
+        _ ->   
+           ?LOG_DEBUG("we have this fact in memory already ~p,~n", [{Sign, Key, Params}])
+    end.
 
 
 id_generator()->

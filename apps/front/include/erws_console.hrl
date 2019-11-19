@@ -21,6 +21,7 @@
 -define(LOCAL_CACHE, d).
 
 -define(KEY_PREFIX, d).
+-define(UNIQ, uniq).
 
 
 

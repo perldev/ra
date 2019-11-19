@@ -40,7 +40,13 @@ headers_png() ->
          <<"Pragma">> => <<"no-cache">>,
          <<"Content-Type">> => <<"image/png">>} 
         .
-                
+read_body_to_console(Req0, Accum) ->
+    case cowboy_req:read_body(Req0, #{length => infinity}) of
+        {ok, Data, Req} ->
+            {Req, <<Accum/binary, Data/binary>>};
+        {more, Data, Req} ->
+            read_body_to_console(Req, <<Accum/binary, Data/binary>>)
+    end.                
                 
         
 % Should never get here.
@@ -48,7 +54,13 @@ handle(Req, State) ->
       ?CONSOLE_LOG("====================================~nrequest: ~p ~n", [Req]),
       Path = cowboy_req:path_info(Req),
       ?CONSOLE_LOG("====================================~npath: ~p ~n", [Path]),
-      {ok, Body, Req2 } = cowboy_req:read_body(Req),               
+      ?CONSOLE_LOG("reading body", []),
+      
+%       {Req2, Body} = read_body_to_console(Req, <<>>),
+      
+%       ?CONSOLE_LOG("finishing ~p", [Body]),
+      
+      {ok, Body, Req2 } = cowboy_req:read_body(Req, #{length => infinity}),               
       ?CONSOLE_LOG("====================================~nbody: ~p ~n", [Body]),
       case process(Path, Body, Req2, State) of
 	  {json, Json, ResReqLast, NewState }->
