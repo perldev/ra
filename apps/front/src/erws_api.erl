@@ -68,7 +68,6 @@ handle(Req, State) ->
 		cowboy_req:reply(200, headers_json_plain(), json_encode(Json), ResReqLast);
 		%{ok, JsonReq, NewState};
           {raw_answer, {Code, Binary, Headers }, ResReqLast, NewState } ->
-
 		cowboy_req:reply(Code, Headers, Binary, ResReqLast)
       end.      
 
@@ -82,7 +81,10 @@ wait_response(Req, State)->
    
 true_response(Req, State)->
    {raw_answer, {200, <<"{\"status\":\"true\"}">>, headers_json_plain() },  Req, State}.
-   
+
+raw_answer(Raw, Req, State)->
+   {raw_answer, {200, Raw, headers_text_html() },  Req, State}.
+    
  
 -spec check_sign(tuple(), binary(), list())-> true|false. 
 check_sign({undefined, undefined}, Body, State)->
@@ -96,7 +98,26 @@ check_sign({Sign, LocalKey}, Body, State)->
         _ -> false
    end
 .
-
+process([<<"once">>],  Body, Req, State)->
+    ?CONSOLE_LOG("call aim ~p ~n", [Body]),
+%     {fact,1,2,3,4,5}
+%     [ {[{<<"name">>,<<"X">>}]}, 1,3,4]
+    case erlog_io:read_string(unicode:characters_to_list(Body)) of
+        {error, Error}->
+            ErrorDesc = erlog_io:write1(Error),
+            raw_answer(to_binary(ErrorDesc), Req, State);
+        {ok, Terms}->
+          case api_table_holder:erlog_once(Terms) of
+              false ->
+                    {json, {[{<<"status">>, false}]}, Req, State};
+              Success ->
+                    ResultL = lists:map(fun({NameX, Val}) ->
+                                            {[{to_binary(NameX),  to_binary(Val) }]}
+                                        end, Success),
+                    {json, {[{<<"status">>, true}, {<<"result">>, ResultL}]}, Req, State}
+          end
+    end
+;
 process([<<"once">>, Name],  Body, Req, State)->
     ?CONSOLE_LOG("call aim ~p ~n", [Body]),
 %     {fact,1,2,3,4,5}
