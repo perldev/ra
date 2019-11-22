@@ -108,9 +108,14 @@ process([<<"once">>],  Body, Req, State)->
             raw_answer(to_binary(ErrorDesc), Req, State);
         {ok, Terms}->
           case api_table_holder:erlog_once(Terms) of
+              {error, Error}->
+                    ErrorDesc = erlog_io:write1(Error),
+                    ListJson = {[{<<"status">>, <<"error">>}, {<<"description">>, to_binary(ErrorDesc) }]},
+                    {json, ListJson, Req, State};
               false ->
                     {json, {[{<<"status">>, false}]}, Req, State};
               Success ->
+                    ?CONSOLE_LOG("result aim ~p ~n", [Success]),
                     ResultL = lists:map(fun({NameX, Val}) ->
                                             {[{to_binary(NameX),  to_binary(Val) }]}
                                         end, Success),
