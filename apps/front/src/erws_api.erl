@@ -11,7 +11,8 @@
          json_encode/1, 
          json_decode/1, 
          dict_to_json/1, 
-         format_date/1]).
+         format_date/1,
+         to_binary/1]).
 
 
 
@@ -348,6 +349,11 @@ to_list(Name) when is_list(Name)->
    
 to_binary(Name) when is_binary(Name) ->
    Name;
+to_binary(Name) when is_tuple(Name) ->
+   NameDesc = erlog_io:write1(Name),
+   to_binary(NameDesc);
+to_binary(Name) when is_integer(Name) ->
+   Name; %% do not commit
 to_binary(Name) when is_list(Name) ->
    to_binary(list_to_binary(Name));
 to_binary(Name) when is_atom(Name) ->
