@@ -73,8 +73,7 @@ handle_call({ lookup, Body}, _From, State) ->
     {reply, Rows, State};    
 handle_call({once, Goal},_From, State )->
   Erlog = State#monitor.erlog,
-  ?LOG_DEBUG("start coal from  ~p to ~p~n", [Goal, Erlog]),
-  
+  ?LOG_DEBUG("start coal from  ~p ~n", [Goal]),
   case catch erlog:prove(Goal, Erlog) of
       {{succeed,Vs}, NewErl}->
             {reply, Vs, State#monitor{erlog=NewErl}};
