@@ -189,6 +189,11 @@ process([<<"once">>, Name],  Body, Req, State)->
     end
 ;
 
+process([<<"create_expert">>, U],  _Body, Req, State )->
+    ?CONSOLE_LOG("create expert system for user ~n", []),
+    api_table_holder:create_expert(U),
+    true_response(Req, State)    
+;
 process([<<"add_consistent">>],  _Body, Req, State )->
     ?CONSOLE_LOG("process load  all from dump ~n", []),
     api_table_holder:add_consisten_knowledge(),

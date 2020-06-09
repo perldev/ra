@@ -8,7 +8,7 @@
          save_db/1, save_db/0, 
          load_from_dump/1, load_from_db/0, 
          flush_erlog/0, add_consisten_knowledge/0,
-         erlog_once/1, erlog_load_code/1, load_erlog/0]).
+         erlog_once/1, erlog_load_code/1, load_erlog/0, create_expert/1]).
 
 -include("erws_console.hrl").
 
@@ -99,7 +99,8 @@ handle_call(flush_erlog, _From ,State) ->
     ?LOG_DEBUG("start loading from   ~n", []),
     ets:delete(?ETS_NAME),
     {ok, Erlog} = erlog:new(erlog_db_ets, ?ETS_NAME),
-    {reply, ok, State#monitor{erlog=Erlog, current_version=<<>>}};
+    {reply, ok, State#monitor{erlog=Erlog, current_version=undefined}};
+    
 handle_call({erlog_code, Body}, _From, State )->
   File = tmp_export_file(),
   %%HACK add \n at the end of file for correct parsing
@@ -167,11 +168,38 @@ handle_cast({dump_db, FileName}, State) ->
     ?LOG_DEBUG("saved normal \n", []),
     {noreply, State}
 ;
-hadle_cast({create_expert, Username}, _Form, State)->
+handle_cast({create_expert, Username}, #monitor{current_version=undefined}=State)->
    ?LOG_DEBUG("get msg call ~p ~n", [Username]),
     Pid = State#monitor.pid, 
     Query = <<"SELECT  Name, Value, ts FROM  facts WHERE Value like CONCAT('%\"', ? ,'\"%') ">>,
-    {ok, ColumnNames, Rows} = mysql:query(Pid, Query, [Username]),
+    {ok, _ColumnNames, Rows} = mysql:query(Pid, Query, [Username]),
+    {ok, Erlog} = erlog:new(erlog_db_ets, list_to_atom(binary_to_list(Username)) ),
+
+    FinaleErl  = lists:foldl(fun([Name, Value, Ets], Accum)->
+                            ?LOG_DEBUG("processing rule for loading ~p ~n", [{Name, Value}]),
+                            case catch erws_api:json_decode(Value) of 
+                              {'EXIT', Error}->
+                                    ?LOG_DEBUG("cant process rule  ~p ~n ~p", [{Name, Value, Ets}, Error]),
+                                    Accum;
+                              DecodeRule -> 
+                                    NewEts = erws_api:format_date(Ets),
+                                    Functor = list_to_atom(binary_to_list(Name)),
+                                    NewRuleL = [Functor, NewEts|DecodeRule],
+                                    NewRule= list_to_tuple(NewRuleL),
+                                    Goal  = {assert, NewRule},
+                                    { {succeed, _}, NewErl} = erlog:prove(Goal, Accum), 
+                                    NewErl 
+                            end
+                       end, Erlog, Rows),
+    LS = State#monitor.systems,
+    ets:insert(?SYSTEMS, {Username, FinaleErl}),
+    {noreply,  State#monitor{systems=[FinaleErl|LS]}}   
+; 
+handle_cast({create_expert, Username}, State)->
+   ?LOG_DEBUG("get msg call ~p ~n", [Username]),
+    Pid = State#monitor.pid, 
+    Query = <<"SELECT  Name, Value, ts FROM  facts WHERE Value like CONCAT('%\"', ? ,'\"%') ">>,
+    {ok, _ColumnNames, Rows} = mysql:query(Pid, Query, [Username]),
     {ok, Erlog} = erlog:new(erlog_db_ets, list_to_atom(binary_to_list(Username)) ),
 
     NewErl  = lists:foldl(fun([Name, Value, Ets], Accum)->
@@ -194,6 +222,7 @@ hadle_cast({create_expert, Username}, _Form, State)->
      %load common rules of our system
      File = tmp_export_file(),
     %%HACK add \n at the end of file for correct parsing
+     Body = State#monitor.current_version,
      file:write_file(File, <<Body/binary, "\n\n\n">>), 
      {ok, MyTerms } = erlog_io:read_file(File),
      FinaleErl =  lists:foldl(fun(Elem, Erl )->    
@@ -275,13 +304,13 @@ erlog_once4export(NameOfExport, Goal)->
         [{NameOfExport, Erlog}]->
             ?LOG_DEBUG("start coal from  ~p ~n", [Goal]),
             case catch erlog:prove(Goal, Erlog) of
-                {{succeed,Vs}, NewErl}->
+                {{succeed,Vs}, _NewErl}->
                         Vs;
-                {fail, NewErl}->
+                {fail, _NewErl}->
                         fail;
-                {{error,Error}, NewErl}->
+                {{error,Error}, _NewErl}->
                         {error, Error};
-                {{'EXIT',Error}, NewErl}->
+                {{'EXIT',Error}, _NewErl}->
                         {error, Error}
             end
     end
@@ -304,6 +333,8 @@ load_erlog()->
     gen_server:cast(?MODULE, load_erlog).
     
 
+create_expert(U)->
+    gen_server:cast(?MODULE, {create_expert, U}).
     
 save_db()->
     gen_server:cast(?MODULE, dump_db).

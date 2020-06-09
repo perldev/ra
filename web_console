@@ -18,12 +18,12 @@ ERL="erl +A 4 +K true" #-config siteheart"
 start(){
 	echo "starting Erlang visor Server"
 	echo " $ERL $HOME_P -kernel error_logger false  -noinput -detached  -boot start_sasl -s $APP -$TYPE $NODE@$HOST -config config/sys"
-	LC_CTYPE=en_US.UTF-8 $ERL $HOME_P -kernel error_logger false  -noinput -detached -setcookie abc -boot start_sasl \
+	LC_CTYPE=en_US.UTF-8 $ERL $HOME_P -boot start_sasl -noinput -detached -setcookie abc -boot start_sasl \
 	-eval "$APP:start()"  -$TYPE $NODE@$HOST -config config/sys
 }
 start_debug(){
 	echo "starting debug"
-	$ERL    $HOME_P   -eval "$APP:start()"  -kernel error_logger false    -boot start_sasl -setcookie abc -$TYPE debug_$NODE@$HOST_TEST -config config/sys
+	$ERL    $HOME_P   -eval "$APP:start()"  -boot start_sasl -setcookie abc -$TYPE debug_$NODE@$HOST_TEST -config config/sys
 
 
 }
