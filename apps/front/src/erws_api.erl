@@ -103,7 +103,36 @@ check_sign({Sign, LocalKey}, Body, State)->
    end
 .
 
+process([Expert, <<"once">>, Name],  Body, Req, State)->
+    ?CONSOLE_LOG("call aim ~p ~n", [Body]),
+%     {fact,1,2,3,4,5}
+%     [ {[{<<"name">>,<<"X">>}]}, 1,3,4]
+    Res = lists:map(fun(Elem)->  case  Elem of 
+                                          {[{<<"name">>, NameX}]} -> { to_atom(NameX) };
+                                          Value -> to_list(Value)   
+                                       end 
+                    end, 
+                    jiffy:decode(Body) ),
+    Atom = to_atom(Name),
+    CallBody = list_to_tuple([Atom|Res]),
+    ?CONSOLE_LOG("call aim ~p ~n", [CallBody]),
+    Result = api_table_holder:erlog_once4export(Name, CallBody),
+    ?CONSOLE_LOG("result aim ~p ~n", [Result]),
 
+    case Result of
+        {error, Error}->
+            ErrorDesc = erlog_io:write1(Error),
+            ListJson = {[{<<"status">>, <<"error">>}, {<<"description">>, to_binary(ErrorDesc) }]},
+            {json, ListJson, Req, State};
+        false ->
+           false_response(Req, State);
+        Success ->
+                ResultL = lists:map(fun({NameX, Val}) ->
+                                          {[{to_binary(NameX),  to_binary(Val) }]}
+                                    end, Success),
+                {json, {[{<<"status">>, true}, {<<"result">>, ResultL}]}, Req, State} 
+    end
+;
 process([<<"once">>],  Body, Req, State)->
     ?CONSOLE_LOG("call aim ~p ~n", [Body]),
 %     {fact,1,2,3,4,5}

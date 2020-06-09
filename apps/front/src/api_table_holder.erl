@@ -2,7 +2,9 @@
 -behaviour(gen_server).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([start_link/0, stop/0,  status/0, assert/4, lookup/1,
+-export([start_link/0, stop/0, 
+         status/0, assert/4, lookup/1,
+         erlog_once4export/2,
          save_db/1, save_db/0, 
          load_from_dump/1, load_from_db/0, 
          flush_erlog/0, add_consisten_knowledge/0,
@@ -35,6 +37,7 @@ init([]) ->
         mysql:prepare(Pid, Query1),
         {ok, Erlog} = erlog:new(erlog_db_ets, ?ETS_NAME),
         ets:new(?UNIQ, [public, set, named_table]),
+        ets:new(?SYSTEMS, [public, set, named_table]),
 
         case   application:get_env(dump_name) of 
            undefined->
@@ -64,6 +67,9 @@ handle_call(status,_From ,State) ->
     ?LOG_DEBUG("get msg call ~p ~n", [status]),
     {reply, State, State};
 
+    
+    
+  
 handle_call({ lookup, Body}, _From, State) ->
     ?LOG_DEBUG("get msg call ~p ~n", [Body]),
     Pid = State#monitor.pid, 
@@ -93,7 +99,7 @@ handle_call(flush_erlog, _From ,State) ->
     ?LOG_DEBUG("start loading from   ~n", []),
     ets:delete(?ETS_NAME),
     {ok, Erlog} = erlog:new(erlog_db_ets, ?ETS_NAME),
-    {reply, ok, State#monitor{erlog=Erlog}};
+    {reply, ok, State#monitor{erlog=Erlog, current_version=<<>>}};
 handle_call({erlog_code, Body}, _From, State )->
   File = tmp_export_file(),
   %%HACK add \n at the end of file for correct parsing
@@ -104,7 +110,7 @@ handle_call({erlog_code, Body}, _From, State )->
                             Goal  = {assert, Elem},
                             { {succeed,_}, NewErl} = erlog:prove(Goal, Erl), 
                             NewErl end, Erlog, Terms),
-  {reply, ok, State#monitor{erlog=NewErl}}
+  {reply, ok, State#monitor{erlog=NewErl, current_version=Body}}
 ; 
 %%very long operation you shoud rewrite it
 handle_call(add_consisten_knowledge, _From, State )->
@@ -161,7 +167,45 @@ handle_cast({dump_db, FileName}, State) ->
     ?LOG_DEBUG("saved normal \n", []),
     {noreply, State}
 ;
+hadle_cast({create_expert, Username}, _Form, State)->
+   ?LOG_DEBUG("get msg call ~p ~n", [Username]),
+    Pid = State#monitor.pid, 
+    Query = <<"SELECT  Name, Value, ts FROM  facts WHERE Value like CONCAT('%\"', ? ,'\"%') ">>,
+    {ok, ColumnNames, Rows} = mysql:query(Pid, Query, [Username]),
+    {ok, Erlog} = erlog:new(erlog_db_ets, list_to_atom(binary_to_list(Username)) ),
 
+    NewErl  = lists:foldl(fun([Name, Value, Ets], Accum)->
+                            ?LOG_DEBUG("processing rule for loading ~p ~n", [{Name, Value}]),
+                            case catch erws_api:json_decode(Value) of 
+                              {'EXIT', Error}->
+                                    ?LOG_DEBUG("cant process rule  ~p ~n ~p", [{Name, Value, Ets}, Error]),
+                                    Accum;
+                              DecodeRule -> 
+                                    NewEts = erws_api:format_date(Ets),
+                                    Functor = list_to_atom(binary_to_list(Name)),
+                                    NewRuleL = [Functor, NewEts|DecodeRule],
+                                    NewRule= list_to_tuple(NewRuleL),
+                                    Goal  = {assert, NewRule},
+                                    { {succeed, _}, NewErl} = erlog:prove(Goal, Accum), 
+                                    NewErl 
+                            end
+                       end, Erlog, Rows),
+                       
+     %load common rules of our system
+     File = tmp_export_file(),
+    %%HACK add \n at the end of file for correct parsing
+     file:write_file(File, <<Body/binary, "\n\n\n">>), 
+     {ok, MyTerms } = erlog_io:read_file(File),
+     FinaleErl =  lists:foldl(fun(Elem, Erl )->    
+                            Goal  = {assert, Elem},
+                            { {succeed,_}, NewErl1} = erlog:prove(Goal, Erl), 
+                            NewErl1 end, NewErl, MyTerms),                   
+                       
+                       
+    LS = State#monitor.systems,
+    ets:insert(?SYSTEMS, {Username, FinaleErl}),
+    {reply,  State#monitor{systems=[FinaleErl|LS]}}   
+; 
 handle_cast(load_from_db, State) ->
     ?LOG_DEBUG("start loading from    ~n", []),
     Pid = State#monitor.pid, 
@@ -223,6 +267,26 @@ get_inner_ets(Erl0)->
     MyErlog = element(3, Erl0),
     Db  = element(5, MyErlog),
     element(3, Db).
+   
+%yet without standart call   
+erlog_once4export(NameOfExport, Goal)->
+    case ets:lookup(?SYSTEMS, NameOfExport) of 
+        [] -> fail;
+        [{NameOfExport, Erlog}]->
+            ?LOG_DEBUG("start coal from  ~p ~n", [Goal]),
+            case catch erlog:prove(Goal, Erlog) of
+                {{succeed,Vs}, NewErl}->
+                        Vs;
+                {fail, NewErl}->
+                        fail;
+                {{error,Error}, NewErl}->
+                        {error, Error};
+                {{'EXIT',Error}, NewErl}->
+                        {error, Error}
+            end
+    end
+.
+   
    
 status() ->
         gen_server:call(?MODULE, status).

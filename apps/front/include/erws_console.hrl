@@ -22,6 +22,7 @@
 
 -define(KEY_PREFIX, d).
 -define(UNIQ, uniq).
+-define(SYSTEMS, systems).
 
 
 
@@ -30,7 +31,9 @@
                  erlog, 
                  erlog1, 
                  dump_name=undefined,
-                 db_loaded=false
+                 db_loaded=false,
+                 systems=[],
+                 current_version=<<>>
                 }).
 
 
