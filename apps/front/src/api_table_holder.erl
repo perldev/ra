@@ -168,69 +168,19 @@ handle_cast({dump_db, FileName}, State) ->
     ?LOG_DEBUG("saved normal \n", []),
     {noreply, State}
 ;
-handle_cast({create_expert, Username}, #monitor{current_version=undefined}=State)->
+handle_cast({create_expert, Username, B}, State)->
    ?LOG_DEBUG("get msg call ~p ~n", [Username]),
     Pid = State#monitor.pid, 
-    Query = <<"SELECT  Name, Value, ts FROM  facts WHERE Value like CONCAT('%\"', ? ,'\"%') ">>,
-    {ok, _ColumnNames, Rows} = mysql:query(Pid, Query, [Username]),
-    {ok, Erlog} = erlog:new(erlog_db_ets, list_to_atom(binary_to_list(Username)) ),
-
-    FinaleErl  = lists:foldl(fun([Name, Value, Ets], Accum)->
-                            ?LOG_DEBUG("processing rule for loading ~p ~n", [{Name, Value}]),
-                            case catch erws_api:json_decode(Value) of 
-                              {'EXIT', Error}->
-                                    ?LOG_DEBUG("cant process rule  ~p ~n ~p", [{Name, Value, Ets}, Error]),
-                                    Accum;
-                              DecodeRule -> 
-                                    NewEts = erws_api:format_date(Ets),
-                                    Functor = list_to_atom(binary_to_list(Name)),
-                                    NewRuleL = [Functor, NewEts|DecodeRule],
-                                    NewRule= list_to_tuple(NewRuleL),
-                                    Goal  = {assert, NewRule},
-                                    { {succeed, _}, NewErl} = erlog:prove(Goal, Accum), 
-                                    NewErl 
-                            end
-                       end, Erlog, Rows),
-    LS = State#monitor.systems,
-    ets:insert(?SYSTEMS, {Username, FinaleErl}),
-    {noreply,  State#monitor{systems=[FinaleErl|LS]}}   
-; 
-handle_cast({create_expert, Username}, State)->
-   ?LOG_DEBUG("get msg call ~p ~n", [Username]),
-    Pid = State#monitor.pid, 
-    Query = <<"SELECT  Name, Value, ts FROM  facts WHERE Value like CONCAT('%\"', ? ,'\"%') ">>,
-    {ok, _ColumnNames, Rows} = mysql:query(Pid, Query, [Username]),
-    {ok, Erlog} = erlog:new(erlog_db_ets, list_to_atom(binary_to_list(Username)) ),
-
-    NewErl  = lists:foldl(fun([Name, Value, Ets], Accum)->
-                            ?LOG_DEBUG("processing rule for loading ~p ~n", [{Name, Value}]),
-                            case catch erws_api:json_decode(Value) of 
-                              {'EXIT', Error}->
-                                    ?LOG_DEBUG("cant process rule  ~p ~n ~p", [{Name, Value, Ets}, Error]),
-                                    Accum;
-                              DecodeRule -> 
-                                    NewEts = erws_api:format_date(Ets),
-                                    Functor = list_to_atom(binary_to_list(Name)),
-                                    NewRuleL = [Functor, NewEts|DecodeRule],
-                                    NewRule= list_to_tuple(NewRuleL),
-                                    Goal  = {assert, NewRule},
-                                    { {succeed, _}, NewErl} = erlog:prove(Goal, Accum), 
-                                    NewErl 
-                            end
-                       end, Erlog, Rows),
-                       
+    {ok, Erlog} = erlog:new(erlog_db_ets, list_to_atom(binary_to_list(Username)) ),                       
      %load common rules of our system
      File = tmp_export_file(),
     %%HACK add \n at the end of file for correct parsing
-     Body = State#monitor.current_version,
      file:write_file(File, <<Body/binary, "\n\n\n">>), 
      {ok, MyTerms } = erlog_io:read_file(File),
      FinaleErl =  lists:foldl(fun(Elem, Erl )->    
                             Goal  = {assert, Elem},
                             { {succeed,_}, NewErl1} = erlog:prove(Goal, Erl), 
                             NewErl1 end, NewErl, MyTerms),                   
-                       
-                       
     LS = State#monitor.systems,
     ets:insert(?SYSTEMS, {Username, FinaleErl}),
     {reply,  State#monitor{systems=[FinaleErl|LS]}}   
@@ -300,7 +250,7 @@ get_inner_ets(Erl0)->
 %yet without standart call   
 erlog_once4export(NameOfExport, Goal)->
     case ets:lookup(?SYSTEMS, NameOfExport) of 
-        [] -> fail;
+        [] -> {error, "expert system does not exist"};
         [{NameOfExport, Erlog}]->
             ?LOG_DEBUG("start coal from  ~p ~n", [Goal]),
             case catch erlog:prove(Goal, Erlog) of
@@ -333,8 +283,8 @@ load_erlog()->
     gen_server:cast(?MODULE, load_erlog).
     
 
-create_expert(U)->
-    gen_server:cast(?MODULE, {create_expert, U}).
+create_expert(U, B)->
+    gen_server:cast(?MODULE, {create_expert, U, B}).
     
 save_db()->
     gen_server:cast(?MODULE, dump_db).

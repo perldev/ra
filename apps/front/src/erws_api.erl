@@ -120,6 +120,9 @@ process([Expert, <<"once">>, Name],  Body, Req, State)->
     ?CONSOLE_LOG("result aim ~p ~n", [Result]),
 
     case Result of
+        fail -> 
+            ListJson = {[{<<"status">>, <<"fail">>}]},
+            {json, ListJson, Req, State};
         {error, Error}->
             ErrorDesc = erlog_io:write1(Error),
             ListJson = {[{<<"status">>, <<"error">>}, {<<"description">>, to_binary(ErrorDesc) }]},
@@ -189,9 +192,11 @@ process([<<"once">>, Name],  Body, Req, State)->
     end
 ;
 
-process([<<"create_expert">>, U],  _Body, Req, State )->
-    ?CONSOLE_LOG("create expert system for user ~n", []),
-    api_table_holder:create_expert(U),
+
+
+process([<<"create_expert">>, U],  Body, Req, State )->
+    ?CONSOLE_LOG("create expert system  ~n", []),
+    api_table_holder:create_expert(U, Body),
     true_response(Req, State)    
 ;
 process([<<"add_consistent">>],  _Body, Req, State )->
