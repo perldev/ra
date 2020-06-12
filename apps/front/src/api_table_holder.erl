@@ -8,7 +8,7 @@
          save_db/1, save_db/0, 
          load_from_dump/1, load_from_db/0, 
          flush_erlog/0, add_consisten_knowledge/0,
-         erlog_once/1, erlog_load_code/1, load_erlog/0, create_expert/1]).
+         erlog_once/1, erlog_load_code/1, load_erlog/0, create_expert/2]).
 
 -include("erws_console.hrl").
 
