@@ -169,18 +169,18 @@ handle_cast({dump_db, FileName}, State) ->
     {noreply, State}
 ;
 handle_cast({create_expert, Username, B}, State)->
-   ?LOG_DEBUG("get msg call ~p ~n", [Username]),
+   ?LOG_DEBUG("create expert system ~p ~n", [Username]),
     Pid = State#monitor.pid, 
     {ok, Erlog} = erlog:new(erlog_db_ets, list_to_atom(binary_to_list(Username)) ),                       
      %load common rules of our system
      File = tmp_export_file(),
     %%HACK add \n at the end of file for correct parsing
-     file:write_file(File, <<Body/binary, "\n\n\n">>), 
+     file:write_file(File, <<B/binary, "\n\n\n">>), 
      {ok, MyTerms } = erlog_io:read_file(File),
      FinaleErl =  lists:foldl(fun(Elem, Erl )->    
                             Goal  = {assert, Elem},
                             { {succeed,_}, NewErl1} = erlog:prove(Goal, Erl), 
-                            NewErl1 end, NewErl, MyTerms),                   
+                            NewErl1 end, Erlog, MyTerms),                   
     LS = State#monitor.systems,
     ets:insert(?SYSTEMS, {Username, FinaleErl}),
     {noreply,  State#monitor{systems=[FinaleErl|LS]}}   
