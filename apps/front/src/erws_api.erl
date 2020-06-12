@@ -116,7 +116,7 @@ process([Expert, <<"once">>, Name],  Body, Req, State)->
     Atom = to_atom(Name),
     CallBody = list_to_tuple([Atom|Res]),
     ?CONSOLE_LOG("call aim ~p ~n", [CallBody]),
-    Result = api_table_holder:erlog_once4export(Name, CallBody),
+    Result = api_table_holder:erlog_once4export(Expert, CallBody),
     ?CONSOLE_LOG("result aim ~p ~n", [Result]),
 
     case Result of

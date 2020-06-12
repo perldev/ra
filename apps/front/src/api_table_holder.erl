@@ -250,7 +250,7 @@ get_inner_ets(Erl0)->
 %yet without standart call   
 erlog_once4export(NameOfExport, Goal)->
     case ets:lookup(?SYSTEMS, NameOfExport) of 
-        [] -> {error, "expert system does not exist"};
+        [] -> {error, <<"expert system does not exist">>};
         [{NameOfExport, Erlog}]->
             ?LOG_DEBUG("start coal from  ~p ~n", [Goal]),
             case catch erlog:prove(Goal, Erlog) of
