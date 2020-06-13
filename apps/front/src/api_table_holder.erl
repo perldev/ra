@@ -171,7 +171,7 @@ handle_cast({dump_db, FileName}, State) ->
 handle_cast({create_expert, Username, MyTerms}, State)->
    ?LOG_DEBUG("create expert system ~p ~n", [Username]),
     Pid = State#monitor.pid, 
-    {ok, Erlog} = erlog:new(erlog_db_ets, list_to_atom(binary_to_list(Username)) ),                       
+    {ok, Erlog} = erlog:new(),%erlog_db_ets, list_to_atom(binary_to_list(Username)) ),                       
      %load common rules of our system
     
      FinaleErl =  lists:foldl(fun(Elem, Erl )->    
