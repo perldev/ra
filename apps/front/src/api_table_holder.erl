@@ -8,7 +8,7 @@
          save_db/1, save_db/0, 
          load_from_dump/1, load_from_db/0, 
          flush_erlog/0, add_consisten_knowledge/0,
-         erlog_once/1, erlog_load_code/1, load_erlog/0, create_expert/2]).
+         erlog_once/1, erlog_load_code/1, load_erlog/0, create_expert/2, tmp_export_file/0]).
 
 -include("erws_console.hrl").
 
@@ -168,15 +168,12 @@ handle_cast({dump_db, FileName}, State) ->
     ?LOG_DEBUG("saved normal \n", []),
     {noreply, State}
 ;
-handle_cast({create_expert, Username, B}, State)->
+handle_cast({create_expert, Username, MyTerms}, State)->
    ?LOG_DEBUG("create expert system ~p ~n", [Username]),
     Pid = State#monitor.pid, 
     {ok, Erlog} = erlog:new(erlog_db_ets, list_to_atom(binary_to_list(Username)) ),                       
      %load common rules of our system
-     File = tmp_export_file(),
-    %%HACK add \n at the end of file for correct parsing
-     file:write_file(File, <<B/binary, "\n\n\n">>), 
-     {ok, MyTerms } = erlog_io:read_file(File),
+    
      FinaleErl =  lists:foldl(fun(Elem, Erl )->    
                             Goal  = {assert, Elem},
                             { {succeed,_}, NewErl1} = erlog:prove(Goal, Erl), 

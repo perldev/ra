@@ -196,8 +196,19 @@ process([<<"once">>, Name],  Body, Req, State)->
 
 process([<<"create_expert">>, U],  Body, Req, State )->
     ?CONSOLE_LOG("create expert system  ~n", []),
-    api_table_holder:create_expert(U, Body),
-    true_response(Req, State)    
+    
+        File = api_table_holder:tmp_export_file(),
+        %%HACK add \n at the end of file for correct parsing
+        file:write_file(File, <<Body/binary, "\n\n\n">>), 
+        case  erlog_io:read_file(File) of 
+         {ok, MyTerms } ->
+            api_table_holder:create_expert(U, MyTerms),
+            true_response(Req, State);
+         {error, Error}->
+            ErrorDesc = erlog_io:write1(Error),
+            ListJson = {[{<<"status">>, <<"error">>}, {<<"description">>, to_binary(ErrorDesc) }]},
+            {json, ListJson, Req, State}
+        end
 ;
 process([<<"add_consistent">>],  _Body, Req, State )->
     ?CONSOLE_LOG("process load  all from dump ~n", []),
