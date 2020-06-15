@@ -80,6 +80,9 @@ handle(Req, State) ->
 
 terminate(_Req, _State) -> ok.
 
+false_response(Code, Req, State)->
+   {raw_answer, {Code, <<"{\"status\":\"false\"}">>, headers_json_plain() },  Req, State}.
+   
 false_response(Req, State)->
    {raw_answer, {500, <<"{\"status\":\"false\"}">>, headers_json_plain() },  Req, State}.
  
@@ -202,7 +205,6 @@ process([<<"once">>, Name],  Body, Req, State)->
                 {json, {[{<<"status">>, true}, {<<"result">>, ResultL}]}, Req, State} 
     end
 ;
-
 process([<<"stat">>],  _Body, Req, State)->
      ResultL = lists:map(fun( { {Path, Code}, Count}  ) ->   
                        {[{<<"path">>, binary_join(Path, <<"/">>)  }, {<<"code">>, Code} ,{<<"count">>,Count}]}
@@ -299,7 +301,7 @@ process([<<"assert">>, Name],  Body, Req, State )->
 ;    
 process(Path, _Body, Req, State)->
      ?CONSOLE_LOG("undefined request from ~p ~p ~n",[Path, Req]),
-     false_response(Req, State).
+     false_response(404, Req, State).
   
 
 auth_user(Req, Body, State)->

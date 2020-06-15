@@ -12,7 +12,7 @@
          flush_erlog/0, add_consisten_knowledge/0,
          erlog_once/1, erlog_load_code/1, 
          load_erlog/0, create_expert/2, tmp_export_file/0,
-         api_stat/2]).
+         api_stat/2, get_api_stat/0]).
 
 -include("erws_console.hrl").
 -include_lib("erlog/src/erlog_int.hrl").
