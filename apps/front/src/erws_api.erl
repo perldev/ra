@@ -64,11 +64,17 @@ handle(Req, State) ->
       {ok, Body, Req2 } = cowboy_req:read_body(Req, #{length => infinity}),               
       ?CONSOLE_LOG("====================================~nbody: ~p ~n", [Body]),
       case process(Path, Body, Req2, State) of
+      	  {Code, json, Json, ResReqLast, NewState }->
+		?CONSOLE_LOG("got request result: ~p~n", [Json]),
+		api_table_holder:api_stat(Code, Path),
+		cowboy_req:reply(Code, headers_json_plain(), json_encode(Json), ResReqLast);
 	  {json, Json, ResReqLast, NewState }->
 		?CONSOLE_LOG("got request result: ~p~n", [Json]),
+                api_table_holder:api_stat(200, Path),
 		cowboy_req:reply(200, headers_json_plain(), json_encode(Json), ResReqLast);
 		%{ok, JsonReq, NewState};
           {raw_answer, {Code, Binary, Headers }, ResReqLast, NewState } ->
+                api_table_holder:api_stat(Code, Path),
 		cowboy_req:reply(Code, Headers, Binary, ResReqLast)
       end.      
 
@@ -122,18 +128,18 @@ process([Expert, <<"once">>, Name],  Body, Req, State)->
     case Result of
         fail -> 
             ListJson = {[{<<"status">>, <<"fail">>}]},
-            {json, ListJson, Req, State};
+            {500, json, ListJson, Req, State};
         {error, Error}->
             ErrorDesc = erlog_io:write1(Error),
             ListJson = {[{<<"status">>, <<"error">>}, {<<"description">>, to_binary(ErrorDesc) }]},
-            {json, ListJson, Req, State};
+            {500, json, ListJson, Req, State};
         false ->
            false_response(Req, State);
         Success ->
-                ResultL = lists:map(fun({NameX, Val}) ->
+            ResultL = lists:map(fun({NameX, Val}) ->
                                           {[{to_binary(NameX),  to_binary(Val) }]}
                                     end, Success),
-                {json, {[{<<"status">>, true}, {<<"result">>, ResultL}]}, Req, State} 
+            {json, {[{<<"status">>, true}, {<<"result">>, ResultL}]}, Req, State} 
     end
 ;
 process([<<"once">>],  Body, Req, State)->
@@ -149,7 +155,10 @@ process([<<"once">>],  Body, Req, State)->
               {error, Error}->
                     ErrorDesc = erlog_io:write1(Error),
                     ListJson = {[{<<"status">>, <<"error">>}, {<<"description">>, to_binary(ErrorDesc) }]},
-                    {json, ListJson, Req, State};
+                    {500, json, ListJson, Req, State};
+              fail -> 
+                    ListJson = {[{<<"status">>, <<"fail">>}]},
+                    {500, json, ListJson, Req, State};
               false ->
                     {json, {[{<<"status">>, false}]}, Req, State};
               Success ->
@@ -176,12 +185,14 @@ process([<<"once">>, Name],  Body, Req, State)->
     ?CONSOLE_LOG("call aim ~p ~n", [CallBody]),
     Result = api_table_holder:erlog_once(CallBody),
     ?CONSOLE_LOG("result aim ~p ~n", [Result]),
-
     case Result of
         {error, Error}->
             ErrorDesc = erlog_io:write1(Error),
             ListJson = {[{<<"status">>, <<"error">>}, {<<"description">>, to_binary(ErrorDesc) }]},
-            {json, ListJson, Req, State};
+            {500, json, ListJson, Req, State};
+        fail -> 
+            ListJson = {[{<<"status">>, <<"fail">>}]},
+            {500, json, ListJson, Req, State};
         false ->
            false_response(Req, State);
         Success ->
@@ -192,8 +203,12 @@ process([<<"once">>, Name],  Body, Req, State)->
     end
 ;
 
-
-
+process([<<"stat">>],  _Body, Req, State)->
+     ResultL = lists:map(fun( { {Path, Code}, Count}  ) ->   
+                       {[{<<"path">>, binary_join(Path, <<"/">>)  }, {<<"code">>, Code} ,{<<"count">>,Count}]}
+                        end,  api_table_holder:get_api_stat()),
+     {json, {[{<<"status">>, true}, {<<"result">>, ResultL}]}, Req, State} 
+;
 process([<<"create_expert">>, U],  Body, Req, State )->
     ?CONSOLE_LOG("create expert system  ~n", []),
     
@@ -207,7 +222,7 @@ process([<<"create_expert">>, U],  Body, Req, State )->
          {error, Error}->
             ErrorDesc = erlog_io:write1(Error),
             ListJson = {[{<<"status">>, <<"error">>}, {<<"description">>, to_binary(ErrorDesc) }]},
-            {json, ListJson, Req, State}
+            {500, json, ListJson, Req, State}
         end
 ;
 process([<<"add_consistent">>],  _Body, Req, State )->
@@ -253,6 +268,21 @@ process([<<"lookup">>],  Body, Req, State )->
     {json, ListJson, Req, State}
     
 ;
+process([ExpertSystem, <<"assert">>, Name],  Body, Req, State )->
+    ?CONSOLE_LOG("process request from ~p ~p ~n",[Name, Body]),
+    Sign = generate_key(Body),
+    case catch erws_api:json_decode(Body) of 
+            {'EXIT', Error}->
+                    ?LOG_DEBUG("cant process rule  ~p ~n ~p", [{Name, Body}, Error]),
+                    ListJson = {[{<<"status">>, true}, {<<"decription">>, <<"malformed json">>}]},
+                    {500, json, ListJson, Req, State};
+            DecodeRule -> 
+                DecodeRuleL = lists:map(fun convert/1, DecodeRule),
+                % YOU should check reponse of erl
+                Res = api_table_holder:assert(ExpertSystem, Name, DecodeRuleL, Body, list_to_binary(Sign)),
+                true_response(Req, State)
+    end
+;  
 process([<<"assert">>, Name],  Body, Req, State )->
     ?CONSOLE_LOG("process request from ~p ~p ~n",[Name, Body]),
     Sign = generate_key(Body),
@@ -260,7 +290,7 @@ process([<<"assert">>, Name],  Body, Req, State )->
             {'EXIT', Error}->
                     ?LOG_DEBUG("cant process rule  ~p ~n ~p", [{Name, Body}, Error]),
                     ListJson = {[{<<"status">>, true}, {<<"decription">>, <<"malformed json">>}]},
-                    {json, ListJson, Req, State};
+                    {500, json, ListJson, Req, State};
             DecodeRule -> 
                 DecodeRuleL = lists:map(fun convert/1, DecodeRule),
                 api_table_holder:assert(Name, DecodeRuleL, Body, list_to_binary(Sign)),
@@ -409,4 +439,17 @@ to_binary(Name) when is_list(Name) ->
 to_binary(Name) when is_atom(Name) ->
    to_binary(atom_to_list(Name)).
    
+   
+-spec binary_join([binary()], binary()) -> binary().
+binary_join([], _Sep) ->
+  <<>>;
+binary_join([Part], _Sep) ->
+  Part;
+binary_join(List, Sep) ->
+  lists:foldr(fun (A, B) ->
+    if
+      bit_size(B) > 0 -> <<A/binary, Sep/binary, B/binary>>;
+      true -> A
+    end
+  end, <<>>, List).
    

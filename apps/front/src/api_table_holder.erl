@@ -3,14 +3,22 @@
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([start_link/0, stop/0, 
-         status/0, assert/4, lookup/1,
+         status/0, assert/4,
+         assert/5,
+         lookup/1,
          erlog_once4export/2,
          save_db/1, save_db/0, 
          load_from_dump/1, load_from_db/0, 
          flush_erlog/0, add_consisten_knowledge/0,
-         erlog_once/1, erlog_load_code/1, load_erlog/0, create_expert/2, tmp_export_file/0]).
+         erlog_once/1, erlog_load_code/1, 
+         load_erlog/0, create_expert/2, tmp_export_file/0,
+         api_stat/2]).
 
 -include("erws_console.hrl").
+-include_lib("erlog/src/erlog_int.hrl").
+%%HACK
+-record(erlog, {vs=[],est}).
+
 
 -define(ETS_NAME, ets_name1).
 -define(ETS_NAME1, ets_name).
@@ -38,6 +46,7 @@ init([]) ->
         {ok, Erlog} = erlog:new(erlog_db_ets, ?ETS_NAME),
         ets:new(?UNIQ, [public, set, named_table]),
         ets:new(?SYSTEMS, [public, set, named_table]),
+        ets:new(?STAT, [public, set, named_table]),
 
         case   application:get_env(dump_name) of 
            undefined->
@@ -227,7 +236,7 @@ handle_cast({add, Key, Params, Raw, Sign}, MyState) ->
 handle_info(Message,  State)->
     ?LOG_DEBUG("undefined child process ~p ~n", [Message]),
      {noreply,  State}.
-  
+
 
 terminate(_Reason, State) ->
     Erl0 = State#monitor.erlog1,
@@ -236,13 +245,13 @@ terminate(_Reason, State) ->
     terminated.
 
 get_inner_db(Erl0)->
-    MyErlog = element(3, Erl0),
-     element(5, MyErlog).
+    MyErlog = Erl0#erlog.est,
+    MyErlog#est.db.
      
 get_inner_ets(Erl0)->
-    MyErlog = element(3, Erl0),
-    Db  = element(5, MyErlog),
-    element(3, Db).
+    MyErlog = Erl0#erlog.est,
+    Db  = MyErlog#est.db,
+    Db#db.loc.
    
 %yet without standart call   
 erlog_once4export(NameOfExport, Goal)->
@@ -251,7 +260,8 @@ erlog_once4export(NameOfExport, Goal)->
         [{NameOfExport, Erlog}]->
             ?LOG_DEBUG("start coal from  ~p ~n", [Goal]),
             case catch erlog:prove(Goal, Erlog) of
-                {{succeed,Vs}, _NewErl}->
+                {{succeed, Vs}, NewErl}->
+                        ets:insert(?SYSTEMS, {NameOfExport, NewErl}),
                         Vs;
                 {fail, _NewErl}->
                         fail;
@@ -301,6 +311,19 @@ add_consisten_knowledge()->
     gen_server:call(?MODULE, add_consisten_knowledge).
     
 
+%%you should check in constantly
+api_stat(Res, Path)->
+    spawn(fun()-> 
+                ets:update_counter(?STAT, {Path, Res}, 1, { {Path, Res}, 0}) 
+          end)
+    
+.
+
+get_api_stat()->
+    ets:tab2list(?STAT)
+.
+
+    
     
 erlog_load_code(Code)->
   File = tmp_export_file(),
@@ -313,7 +336,23 @@ erlog_load_code(Code)->
 lookup(Body)->
     gen_server:call(?MODULE, {lookup, Body}).
     
-    
+ 
+assert(NameOfExport, Key, Params, Raw, Sign)->
+    assert(Key, Params, Raw, Sign),
+    case ets:lookup(?SYSTEMS, NameOfExport) of 
+        [] -> {fail, non_exist};
+        [{NameOfExport, Erlog}]->
+            Ets = erlang:localtime(),
+            NewEts = erws_api:format_date(Ets),
+            Functor = list_to_atom(binary_to_list(Key)),
+            NewRuleL = [Functor, NewEts|Params],
+            NewRule = list_to_tuple(NewRuleL),
+            Db = get_inner_db(Erlog),
+            NewDb = erlog_int:asserta_clause(NewRule, Db),
+            ets:insert({NameOfExport, Erlog#est{db=NewDb} } ),
+            true
+    end.
+ 
 assert(Key, Params, Raw, Sign)->
     case ets:lookup(?UNIQ, Sign) of
         [] ->  
@@ -338,7 +377,8 @@ assert(Key, Params, Raw, Sign)->
             ?LOG_DEBUG("result erlog 2 ~p \n", [Res1]),
             true;        
         _ ->   
-           ?LOG_DEBUG("we have this fact in memory already ~p,~n", [{Sign, Key, Params}])
+           ?LOG_DEBUG("we have this fact in memory already ~p,~n", [{Sign, Key, Params}]),
+           true
     end.
 
 

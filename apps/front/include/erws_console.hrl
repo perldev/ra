@@ -23,6 +23,7 @@
 -define(KEY_PREFIX, d).
 -define(UNIQ, uniq).
 -define(SYSTEMS, systems).
+-define(STAT, stat).
 
 
 
