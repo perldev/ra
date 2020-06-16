@@ -76,16 +76,14 @@ handle_call(status,_From ,State) ->
     ?LOG_DEBUG("get msg call ~p ~n", [status]),
     {reply, State, State};
 
-    
-    
-  
 handle_call({ lookup, Body}, _From, State) ->
     ?LOG_DEBUG("get msg call ~p ~n", [Body]),
     Pid = State#monitor.pid, 
     Query = <<"SELECT  Name, Value, ts FROM  facts WHERE Value like CONCAT('%', ? ,'%') ">>,
     {ok, ColumnNames, Rows} = mysql:query(Pid, Query, [Body]),
     ?LOG_DEBUG("found  ~p ~n", [{ColumnNames, Rows}]),
-    {reply, Rows, State};    
+    {reply, Rows, State};
+    
 handle_call({once, Goal},_From, State )->
   Erlog = State#monitor.erlog,
   ?LOG_DEBUG("start coal from  ~p ~n", [Goal]),
@@ -181,12 +179,13 @@ handle_cast({create_expert, Username, MyTerms}, State)->
    ?LOG_DEBUG("create expert system ~p ~n", [Username]),
     Pid = State#monitor.pid, 
     {ok, Erlog} = erlog:new(),%erlog_db_ets, list_to_atom(binary_to_list(Username)) ),                       
-     %load common rules of our system
+    %load common rules of our system
     
-     FinaleErl =  lists:foldl(fun(Elem, Erl )->    
+    FinaleErl =  lists:foldl(fun(Elem, Erl )->    
                             Goal  = {assert, Elem},
+                            
                             { {succeed,_}, NewErl1} = erlog:prove(Goal, Erl), 
-                            NewErl1 end, Erlog, MyTerms),                   
+                            NewErl1 end, Erlog, MyTerms), 
     LS = State#monitor.systems,
     ets:insert(?SYSTEMS, {Username, FinaleErl}),
     {noreply,  State#monitor{systems=[FinaleErl|LS]}}   
@@ -263,8 +262,9 @@ erlog_once4export(NameOfExport, Goal)->
                 {{succeed, Vs}, NewErl}->
                         ets:insert(?SYSTEMS, {NameOfExport, NewErl}),
                         Vs;
-                {fail, _NewErl}->
-                        fail;
+                {fail, NewErl}->
+                         ets:insert(?SYSTEMS, {NameOfExport, NewErl}),
+                        false;
                 {{error,Error}, _NewErl}->
                         {error, Error};
                 {{'EXIT',Error}, _NewErl}->
