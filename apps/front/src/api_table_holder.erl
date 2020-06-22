@@ -6,6 +6,7 @@
          status/0, assert/4,
          assert/5,
          lookup/1,
+         lookup/2,
          erlog_once4export/2,
          save_db/1, save_db/0, 
          load_from_dump/1, load_from_db/0, 
@@ -45,12 +46,13 @@ init([]) ->
         mysql:prepare(Pid, Query1),
         {ok, Erlog} = erlog:new(erlog_db_ets, ?ETS_NAME),
         ets:new(?UNIQ, [public, set, named_table]),
-        ets:new(?SYSTEMS, [public, set, named_table]),
         ets:new(?STAT, [public, set, named_table]),
 
         case   application:get_env(dump_name) of 
            undefined->
-                {ok, Erlog1} = erlog:new(erlog_db_ets, ?ETS_NAME1),
+                ets:new(?SYSTEMS, [public, set, named_table]),
+                {ok, Erlog1} = erlog:new(),
+                ets:insert(?SYSTEMS, {"", Erlog }), %empty key for default expert system
                 {ok, #monitor{pid=Pid, 
                               erlog=Erlog,
                               erlog1=Erlog1
@@ -58,14 +60,27 @@ init([]) ->
                 };
             {ok, DumpName}->
                 %% load from file
-                {ok, Erlog1} = erlog:new(erlog_db_ets, DumpName),
-                {ok, #monitor{pid=Pid, 
-                            erlog=Erlog,
-                            erlog1=Erlog1,
-                            dump_name=DumpName,
-                            db_loaded=true
-                            }
-                }
+                {ok, Tab} = ets:file2tab(DumpName),
+                case ets:lookup(Tab, "") of
+                    [] -> 
+                        {ok, Erlog1} = erlog:new(),
+                        ets:insert(?SYSTEMS, {"", Erlog1 }), %empty key for default expert system
+                        {ok, #monitor{pid=Pid, 
+                                erlog=Erlog,
+                                erlog1 = Erlog1,
+                                dump_name=DumpName,
+                                db_loaded=true
+                                }
+                        };
+                     [{"", Erlog1}]->
+                       {ok, #monitor{pid=Pid, 
+                                erlog=Erlog,
+                                erlog1 = Erlog1,
+                                dump_name=DumpName,
+                                db_loaded=true
+                                }
+                        }
+                end
         
         end.
 
@@ -83,28 +98,13 @@ handle_call({ lookup, Body}, _From, State) ->
     {ok, ColumnNames, Rows} = mysql:query(Pid, Query, [Body]),
     ?LOG_DEBUG("found  ~p ~n", [{ColumnNames, Rows}]),
     {reply, Rows, State};
-    
-handle_call({once, Goal},_From, State )->
-  Erlog = State#monitor.erlog,
-  ?LOG_DEBUG("start coal from  ~p ~n", [Goal]),
-  case catch erlog:prove(Goal, Erlog) of
-      {{succeed,Vs}, NewErl}->
-            {reply, Vs, State#monitor{erlog=NewErl}};
-      {fail, NewErl}->
-            {reply, false, State#monitor{erlog=NewErl}};
-      {{error,Error}, NewErl}->
-            {reply, {error, Error}, State#monitor{erlog=NewErl}};
-      {{'EXIT',Error}, NewErl}->
-            {reply, {error, Error}, State#monitor{erlog=NewErl}}
-  end
-;
 % ALGO of refreshing public api of expert system
 % 1) flush() 
 % 2) load expert  code
 % 3) add_consisten_knowledge
 handle_call(flush_erlog, _From ,State) ->
     ?LOG_DEBUG("start loading from   ~n", []),
-    ets:delete(?ETS_NAME),
+    ets:delete(?ETS_NAME)
     {ok, Erlog} = erlog:new(erlog_db_ets, ?ETS_NAME),
     {reply, ok, State#monitor{erlog=Erlog, current_version=undefined}};
     
@@ -156,22 +156,26 @@ handle_cast( {erlog_code, Terms}, State)->
     {noreply, State#monitor{erlog=Erlog}}
 ;
 handle_cast({load_from_dump, FileName}, State) ->
-    ets:delete(?ETS_NAME1),
-    {ok, Erlog} = erlog:new(erlog_db_ets, FileName),
-    ?LOG_DEBUG("loaded normal \n", []),
-    {noreply, State#monitor{erlog1=Erlog, db_loaded=true}}
+    ets:delete(?SYSTEMS),
+    {ok, ?SYSTEMS} = ets:file2tab(FileName),
+    case ets:lookup(Tab, "") of
+          [] -> 
+           {ok, Erlog1} = erlog:new(),
+            ets:insert(?SYSTEMS, {"", Erlog1 }),
+            ?LOG_DEBUG("loaded normal \n", []),
+            {noreply, State#monitor{db_loaded=true}};
+          {"", Value}->
+            {noreply, State#monitor{db_loaded=true}}
+    end
+
 ;
 handle_cast(dump_db, State) ->
-    Erl0 = State#monitor.erlog1,
-    Tab = get_inner_ets(Erl0),
-    ets:tab2file(Tab , State#monitor.dump_name),
+    ets:tab2file(?SYSTEMS , State#monitor.dump_name),
     ?LOG_DEBUG("saved normal \n", []),
     {noreply, State}
 ;
 handle_cast({dump_db, FileName}, State) ->
-    Erl0 = State#monitor.erlog1,
-    Tab = get_inner_ets(Erl0),
-    ets:tab2file(Tab , FileName),
+    ets:tab2file(?SYSTEMS , FileName),
     ?LOG_DEBUG("saved normal \n", []),
     {noreply, State}
 ;
@@ -179,17 +183,16 @@ handle_cast({create_expert, Username, MyTerms}, State)->
    ?LOG_DEBUG("create expert system ~p ~n", [Username]),
     Pid = State#monitor.pid, 
     {ok, Erlog} = erlog:new(),%erlog_db_ets, list_to_atom(binary_to_list(Username)) ),                       
-    %load common rules of our system
-    
+    %load common rules of our system    
     FinaleErl =  lists:foldl(fun(Elem, Erl )->    
                             Goal  = {assert, Elem},
-                            
                             { {succeed,_}, NewErl1} = erlog:prove(Goal, Erl), 
                             NewErl1 end, Erlog, MyTerms), 
     LS = State#monitor.systems,
     ets:insert(?SYSTEMS, {Username, FinaleErl}),
     {noreply,  State#monitor{systems=[FinaleErl|LS]}}   
-; 
+;
+%%TODO add looking by info
 handle_cast(load_from_db, State) ->
     ?LOG_DEBUG("start loading from    ~n", []),
     Pid = State#monitor.pid, 
@@ -281,7 +284,9 @@ stop()->
         gen_server:call(?MODULE, stop).
 
 erlog_once(Msg)->
-        gen_server:call(?MODULE, {once, Msg}).
+  erlog_once4export("", Msg).
+   
+  
         
 load_from_db()->
     gen_server:cast(?MODULE, load_from_db).
@@ -332,9 +337,12 @@ erlog_load_code(Code)->
   {ok, Terms } = erlog_io:read_file(File),  
   gen_server:cast(?MODULE, {erlog_code, Terms}).
 
-    
+lookup(Body, Timout)->
+    gen_server:call(?MODULE, {lookup, Body}, Timout).
+  
+
 lookup(Body)->
-    gen_server:call(?MODULE, {lookup, Body}).
+    lookup(Body, 20000).
     
  
 assert(NameOfExport, Key, Params, Raw, Sign)->
