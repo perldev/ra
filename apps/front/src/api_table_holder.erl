@@ -341,8 +341,8 @@ assert(NameOfExport, Key, Params, Raw, Sign)->
             NewRule = list_to_tuple(NewRuleL),
             Db = get_inner_db(Erlog),
             NewDb = erlog_int:asserta_clause(NewRule, Db),
-            Est = Erlog1#erlog.est,
-            ets:insert(?SYSTEMS, {NameOfExport, Erlog1#erlog{est=Est#est{db=Res1}} } ),
+            Est = Erlog#erlog.est,
+            ets:insert(?SYSTEMS, {NameOfExport, Erlog#erlog{est=Est#est{db=NewDb}} } ),
             true
     end.
 
@@ -364,10 +364,10 @@ assert(Key, Params, Raw, Sign)->
             Functor = list_to_atom(binary_to_list(Key)),
             NewRuleL = [Functor, NewEts|Params],
             NewRule = list_to_tuple(NewRuleL),
-            Res1 = erlog_int:asserta_clause(NewRule, Db1),
-            Est = Erlog1#erlog.est
-            ets:insert(?SYSTEMS, {"", Erlog1#erlog{est=Est1#est{db=Res1}} } ) ,
-            ?LOG_DEBUG("result erlog 2 ~p \n", [Res1])
+            NewDb = erlog_int:asserta_clause(NewRule, Db1),
+            Est = Erlog1#erlog.est,
+            ets:insert(?SYSTEMS, {"", Erlog1#erlog{est=Est#est{db=NewDb}} } ) ,
+            ?LOG_DEBUG("result erlog 2 ~p \n", [NewDb])
 %%        _ ->   
 %%          ?LOG_DEBUG("we have this fact in memory already ~p,~n", [{Sign, Key, Params}]),
 %%         true
