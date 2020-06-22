@@ -33,7 +33,6 @@ init([]) ->
         {ok, User} = application:get_env(mysql_user),
         {ok, Db} = application:get_env(mysql_db),
         {ok, Pwd} = application:get_env(mysql_pwd),
-
         {ok, Pid} = mysql:start_link([{host,  Host},
                                       {user, User},
                                       {password, Pwd},
@@ -52,7 +51,7 @@ init([]) ->
            undefined->
                 ets:new(?SYSTEMS, [public, set, named_table]),
                 {ok, Erlog1} = erlog:new(),
-                ets:insert(?SYSTEMS, {"", Erlog }), %empty key for default expert system
+                ets:insert(?SYSTEMS, {"", Erlog1 }), %empty key for default expert system
                 {ok, #monitor{pid=Pid, 
                               erlog=Erlog,
                               erlog1=Erlog1
@@ -66,19 +65,19 @@ init([]) ->
                         {ok, Erlog1} = erlog:new(),
                         ets:insert(?SYSTEMS, {"", Erlog1 }), %empty key for default expert system
                         {ok, #monitor{pid=Pid, 
-                                erlog=Erlog,
-                                erlog1 = Erlog1,
-                                dump_name=DumpName,
-                                db_loaded=true
-                                }
+                                      erlog=Erlog,
+                                      erlog1 = Erlog1,
+                                      dump_name=DumpName,
+                                      db_loaded=true
+                                     }
                         };
                      [{"", Erlog1}]->
                        {ok, #monitor{pid=Pid, 
-                                erlog=Erlog,
-                                erlog1 = Erlog1,
-                                dump_name=DumpName,
-                                db_loaded=true
-                                }
+                                     erlog=Erlog,
+                                     erlog1 = Erlog1,
+                                     dump_name=DumpName,
+                                     db_loaded=true
+                                    }
                         }
                 end
         
@@ -104,22 +103,11 @@ handle_call({ lookup, Body}, _From, State) ->
 % 3) add_consisten_knowledge
 handle_call(flush_erlog, _From ,State) ->
     ?LOG_DEBUG("start loading from   ~n", []),
-    ets:delete(?ETS_NAME)
-    {ok, Erlog} = erlog:new(erlog_db_ets, ?ETS_NAME),
-    {reply, ok, State#monitor{erlog=Erlog, current_version=undefined}};
+    {ok, Erlog} = erlog:new(),
+    {reply, ok, State#monitor{erlog1=Erlog, current_version=undefined}};
     
-handle_call({erlog_code, Body}, _From, State )->
-  File = tmp_export_file(),
-  %%HACK add \n at the end of file for correct parsing
-  file:write_file(File, <<Body/binary, "\n\n\n">>), 
-  Erlog = State#monitor.erlog,
-  {ok, Terms } = erlog_io:read_file(File),
-  NewErl =  lists:foldl(fun(Elem, Erl )->    
-                            Goal  = {assert, Elem},
-                            { {succeed,_}, NewErl} = erlog:prove(Goal, Erl), 
-                            NewErl end, Erlog, Terms),
-  {reply, ok, State#monitor{erlog=NewErl, current_version=Body}}
-; 
+
+%%DEPRECATED
 %%very long operation you shoud rewrite it
 handle_call(add_consisten_knowledge, _From, State )->
   EtsTab = get_inner_ets(State#monitor.erlog1),
@@ -142,7 +130,7 @@ handle_call(Info,_From ,State) ->
 % and next time  for saving time 
 %   1) load from dump
 handle_cast( {erlog_code, Terms}, State)->
-   Erlog = State#monitor.erlog,
+   Erlog = State#monitor.erlog1,
    Db = get_inner_db(Erlog),
   ?LOG_DEBUG("Db is  ~p  ~n and Terms ~p  ~n", [ Db, Terms]),
    Pid = spawn_link(fun() ->   lists:foreach(fun(Elem)->   
@@ -153,12 +141,12 @@ handle_cast( {erlog_code, Terms}, State)->
                                                 Terms) 
                                            end),
     ?LOG_DEBUG("start loading ~p \n", [Pid]),
-    {noreply, State#monitor{erlog=Erlog}}
+    {noreply, State#monitor{erlog1=Erlog}}
 ;
 handle_cast({load_from_dump, FileName}, State) ->
     ets:delete(?SYSTEMS),
     {ok, ?SYSTEMS} = ets:file2tab(FileName),
-    case ets:lookup(Tab, "") of
+    case ets:lookup(?SYSTEMS, "") of
           [] -> 
            {ok, Erlog1} = erlog:new(),
             ets:insert(?SYSTEMS, {"", Erlog1 }),
@@ -179,19 +167,11 @@ handle_cast({dump_db, FileName}, State) ->
     ?LOG_DEBUG("saved normal \n", []),
     {noreply, State}
 ;
-handle_cast({create_expert, Username, MyTerms}, State)->
-   ?LOG_DEBUG("create expert system ~p ~n", [Username]),
-    Pid = State#monitor.pid, 
-    {ok, Erlog} = erlog:new(),%erlog_db_ets, list_to_atom(binary_to_list(Username)) ),                       
-    %load common rules of our system    
-    FinaleErl =  lists:foldl(fun(Elem, Erl )->    
-                            Goal  = {assert, Elem},
-                            { {succeed,_}, NewErl1} = erlog:prove(Goal, Erl), 
-                            NewErl1 end, Erlog, MyTerms), 
+handle_cast({create_expert, Username}, State)->
     LS = State#monitor.systems,
-    ets:insert(?SYSTEMS, {Username, FinaleErl}),
-    {noreply,  State#monitor{systems=[FinaleErl|LS]}}   
+    {noreply,  State#monitor{systems=[Username|LS]}}   
 ;
+%%DEPRECATED
 %%TODO add looking by info
 handle_cast(load_from_db, State) ->
     ?LOG_DEBUG("start loading from    ~n", []),
@@ -199,7 +179,6 @@ handle_cast(load_from_db, State) ->
     Query = <<"SELECT  Name, Value, ts FROM  facts WHERE 1">>,
     {ok, _ColumnNames, Rows} = mysql:query(Pid, Query, []),    
     Erlog = State#monitor.erlog1,
-%   Res = lists:map(fun([Name, Value, Ets])->   {[{<<"type">>, Name}, {<<"value">>, json_decode(Value)}, {<<"date">>,  list_to_binary(format_date(Ets)) }]}   end,  List),
     NewErl  = lists:foldl(fun([Name, Value, Ets], Accum)->
                             ?LOG_DEBUG("processing rule for loading ~p ~n", [{Name, Value}]),
                             case catch erws_api:json_decode(Value) of 
@@ -217,14 +196,15 @@ handle_cast(load_from_db, State) ->
                             end
                        end, Erlog, Rows),
     {noreply, State#monitor{erlog1=NewErl, db_loaded=true}};    
+    
 handle_cast({add, Key, Params, Raw, Sign}, MyState) ->
     ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
-    Pid = MyState#monitor.pid, 
-    Query = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
+    Pid = MyState#monitor.pid,
+    Query = <<"INSERT INTO facts( Name, Value, Sign) VALUES(?, ?, ?)">>,
+
     ok = mysql:query(Pid, Query, [Key, Raw, Sign]),
     Erlog = MyState#monitor.erlog,
     Erlog1 = MyState#monitor.erlog1,
-
     Ets = erlang:localtime(),
     NewEts = erws_api:format_date(Ets),
     Functor = list_to_atom(binary_to_list(Key)),
@@ -239,11 +219,8 @@ handle_info(Message,  State)->
     ?LOG_DEBUG("undefined child process ~p ~n", [Message]),
      {noreply,  State}.
 
-
 terminate(_Reason, State) ->
-    Erl0 = State#monitor.erlog1,
-    Tab = get_inner_ets(Erl0), 
-    ets:tab2file(Tab , State#monitor.dump_name),
+    ets:tab2file(?SYSTEMS , State#monitor.dump_name),
     terminated.
 
 get_inner_db(Erl0)->
@@ -295,8 +272,16 @@ load_erlog()->
     gen_server:cast(?MODULE, load_erlog).
     
 
-create_expert(U, B)->
-    gen_server:cast(?MODULE, {create_expert, U, B}).
+create_expert(Username, MyTerms)->
+    ?LOG_DEBUG("create expert system ~p ~n", [Username]),
+    {ok, Erlog} = erlog:new(),%erlog_db_ets, list_to_atom(binary_to_list(Username)) ),                       
+    %load common rules of our system    
+    FinaleErl =  lists:foldl(fun(Elem, Erl )->    
+                            Goal  = {assert, Elem},
+                            { {succeed,_}, NewErl1} = erlog:prove(Goal, Erl), 
+                            NewErl1 end, Erlog, MyTerms), 
+    ets:insert(?SYSTEMS, {Username, FinaleErl}),
+    gen_server:cast(?MODULE, {create_expert, Username}).
     
 save_db()->
     gen_server:cast(?MODULE, dump_db).

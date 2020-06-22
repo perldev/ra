@@ -252,6 +252,7 @@ process([<<"flush">>],  _Body, Req, State )->
     api_table_holder:flush_erlog(),
     true_response(Req, State)    
 ;
+%DEPRECATED
 process([<<"load_from_db">>],  _Body, Req, State )->
     ?CONSOLE_LOG("process load code from db   ~n", []),
     api_table_holder:load_from_db(),
