@@ -364,8 +364,7 @@ assert(Key, Params, Raw, Sign)->
             NewRule = list_to_tuple(NewRuleL),
             Res1 = erlog_int:asserta_clause(NewRule, Db1),
             ets:insert(?SYSTEMS, {"", Erlog1#est{db=Res1} }),
-            ?LOG_DEBUG("result erlog 2 ~p \n", [Res1]),
-            true;        
+            ?LOG_DEBUG("result erlog 2 ~p \n", [Res1])
 %%        _ ->   
 %%          ?LOG_DEBUG("we have this fact in memory already ~p,~n", [{Sign, Key, Params}]),
 %%         true
