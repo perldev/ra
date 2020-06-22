@@ -341,7 +341,8 @@ assert(NameOfExport, Key, Params, Raw, Sign)->
             NewRule = list_to_tuple(NewRuleL),
             Db = get_inner_db(Erlog),
             NewDb = erlog_int:asserta_clause(NewRule, Db),
-            ets:insert(?SYSTEMS, {NameOfExport, Erlog#est{db=NewDb} } ),
+            Est = Erlog1#erlog.est,
+            ets:insert(?SYSTEMS, {NameOfExport, Erlog1#erlog{est=Est#est{db=Res1}} } ),
             true
     end.
 
@@ -352,6 +353,7 @@ assert(Key, Params, Raw, Sign)->
 %%           ets:insert(?UNIQ, {Sign, 1}),
             MyState = api_table_holder:status(),
             Erlog1 = MyState#monitor.erlog1,
+            
             Db1 = get_inner_db(Erlog1),
             ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
             Pid = MyState#monitor.pid, 
@@ -363,7 +365,8 @@ assert(Key, Params, Raw, Sign)->
             NewRuleL = [Functor, NewEts|Params],
             NewRule = list_to_tuple(NewRuleL),
             Res1 = erlog_int:asserta_clause(NewRule, Db1),
-            ets:insert(?SYSTEMS, {"", Erlog1#est{db=Res1} }),
+            Est = Erlog1#erlog.est
+            ets:insert(?SYSTEMS, {"", Erlog1#erlog{est=Est1#est{db=Res1}} } ) ,
             ?LOG_DEBUG("result erlog 2 ~p \n", [Res1])
 %%        _ ->   
 %%          ?LOG_DEBUG("we have this fact in memory already ~p,~n", [{Sign, Key, Params}]),
