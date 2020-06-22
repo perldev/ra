@@ -313,8 +313,6 @@ get_api_stat()->
     ets:tab2list(?STAT)
 .
 
-    
-    
 erlog_load_code(Code)->
   File = tmp_export_file(),
   %%HACK add \n at the end of file for correct parsing
@@ -331,6 +329,7 @@ lookup(Body)->
     
  
 assert(NameOfExport, Key, Params, Raw, Sign)->
+    %% ADDING TO DEFAULT
     assert(Key, Params, Raw, Sign),
     case ets:lookup(?SYSTEMS, NameOfExport) of 
         [] -> {fail, non_exist};
@@ -342,18 +341,17 @@ assert(NameOfExport, Key, Params, Raw, Sign)->
             NewRule = list_to_tuple(NewRuleL),
             Db = get_inner_db(Erlog),
             NewDb = erlog_int:asserta_clause(NewRule, Db),
-            ets:insert({NameOfExport, Erlog#est{db=NewDb} } ),
+            ets:insert(?SYSTEMS, {NameOfExport, Erlog#est{db=NewDb} } ),
             true
     end.
- 
+
 assert(Key, Params, Raw, Sign)->
-    case ets:lookup(?UNIQ, Sign) of
-        [] ->  
-            ets:insert(?UNIQ, {Sign, 1}),
+%% turn of check doubles
+%%   case ets:lookup(?UNIQ, Sign) of
+%%      [] ->  
+%%           ets:insert(?UNIQ, {Sign, 1}),
             MyState = api_table_holder:status(),
-            Erlog = MyState#monitor.erlog,
             Erlog1 = MyState#monitor.erlog1,
-            Db = get_inner_db(Erlog),
             Db1 = get_inner_db(Erlog1),
             ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
             Pid = MyState#monitor.pid, 
@@ -364,15 +362,15 @@ assert(Key, Params, Raw, Sign)->
             Functor = list_to_atom(binary_to_list(Key)),
             NewRuleL = [Functor, NewEts|Params],
             NewRule = list_to_tuple(NewRuleL),
-            Res = erlog_int:asserta_clause(NewRule, Db),
-            ?LOG_DEBUG("result erlog 1 ~p \n", [Res]),
             Res1 = erlog_int:asserta_clause(NewRule, Db1),
+            ets:insert(?SYSTEMS, {"", Erlog1#est{db=Res1} }),
             ?LOG_DEBUG("result erlog 2 ~p \n", [Res1]),
             true;        
-        _ ->   
-           ?LOG_DEBUG("we have this fact in memory already ~p,~n", [{Sign, Key, Params}]),
-           true
-    end.
+%%        _ ->   
+%%          ?LOG_DEBUG("we have this fact in memory already ~p,~n", [{Sign, Key, Params}]),
+%%         true
+%% end.
+.
 
 
 id_generator()->
