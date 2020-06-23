@@ -52,8 +52,8 @@ init([]) ->
            undefined->
                 ets:new(?SYSTEMS, [public, set, named_table]),
                 {ok, Erlog1} = erlog:new(),
-                
-                ets:insert(?SYSTEMS, {"", Erlog1, spawn_link(?MODULE, myqueue, [""] ) }), %empty key for default expert system
+                ets:insert(?SYSTEMS, {"", Erlog1}), %empty key for default expert system
+                start_queues(),
                 {ok, #monitor{pid=Pid, 
                               erlog=Erlog,
                               erlog1=Erlog1
@@ -372,8 +372,11 @@ assert(NameOfExport, Key, Params, Raw, Sign)->
     %% ADDING TO DEFAULT
     assert(Key, Params, Raw, Sign),
     case ets:lookup(?SYSTEMS, NameOfExport) of 
-        [] -> {fail, non_exist};
+        [] -> 
+            ?LOG_DEBUG("we didn't find default system ~p ~n", [NameOfExport] ),
+            {fail, non_exist};
         [{NameOfExport, _Erlog, Pid}]->
+            ?LOG_DEBUG("send new fact to system ~p ~n", [NameOfExport] ),
             Pid ! { add, NameOfExport, Key, Params, Raw, Sign}
     end.
 
@@ -386,9 +389,10 @@ assert(Key, Params, Raw, Sign)->
     ok = mysql:query(Pid, Query, [Key, Raw, Sign]),
     case ets:lookup(?SYSTEMS, "") of
             [{"", _Erlog, Pid}]->             
+              ?LOG_DEBUG("adding to default system ~n", [ ]),
               Pid ! { add, "", Key, Params, Raw, Sign};
-            _ ->   
-              ?LOG_DEBUG("we didn't find default system ~n", [] ),
+            Res ->   
+              ?LOG_DEBUG("we didn't find default system ~p ~n", [Res] ),
               true
      end
 .
