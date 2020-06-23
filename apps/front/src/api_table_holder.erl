@@ -13,7 +13,8 @@
          flush_erlog/0, add_consisten_knowledge/0,
          erlog_once/1, erlog_load_code/1, 
          load_erlog/0, create_expert/2, tmp_export_file/0,
-         api_stat/2, get_api_stat/0]).
+         api_stat/2, get_api_stat/0, start_queues/0,
+         myqueue/1]).
 
 -include("erws_console.hrl").
 -include_lib("erlog/src/erlog_int.hrl").
@@ -51,7 +52,8 @@ init([]) ->
            undefined->
                 ets:new(?SYSTEMS, [public, set, named_table]),
                 {ok, Erlog1} = erlog:new(),
-                ets:insert(?SYSTEMS, {"", Erlog1 }), %empty key for default expert system
+                
+                ets:insert(?SYSTEMS, {"", Erlog1, spawn_link(?MODULE, myqueue, [""] ) }), %empty key for default expert system
                 {ok, #monitor{pid=Pid, 
                               erlog=Erlog,
                               erlog1=Erlog1
@@ -59,11 +61,12 @@ init([]) ->
                 };
             {ok, DumpName}->
                 %% load from file
-                {ok, Tab} = ets:file2tab(DumpName),
-                case ets:lookup(Tab, "") of
+                {ok, ?SYSTEMS} = ets:file2tab(DumpName),
+                start_queues(),
+                case ets:lookup(?SYSTEMS, "") of
                     [] -> 
                         {ok, Erlog1} = erlog:new(),
-                        ets:insert(?SYSTEMS, {"", Erlog1 }), %empty key for default expert system
+                        ets:insert(?SYSTEMS, {"", Erlog1, spawn_link(?MODULE, myqueue, [""]) }), %empty key for default expert system
                         {ok, #monitor{pid=Pid, 
                                       erlog=Erlog,
                                       erlog1 = Erlog1,
@@ -72,6 +75,16 @@ init([]) ->
                                      }
                         };
                      [{"", Erlog1}]->
+                       ets:insert(?SYSTEMS, {"", Erlog1, spawn_link(?MODULE, myqueue, [""]) }), %empty key for default expert system
+                       {ok, #monitor{pid=Pid, 
+                                     erlog=Erlog,
+                                     erlog1 = Erlog1,
+                                     dump_name=DumpName,
+                                     db_loaded=true
+                                    }
+                        };
+                    [{"", Erlog1, _P}]->
+                       ets:insert(?SYSTEMS, {"", Erlog1, spawn_link(?MODULE, myqueue, [""]) }), %empty key for default expert system
                        {ok, #monitor{pid=Pid, 
                                      erlog=Erlog,
                                      erlog1 = Erlog1,
@@ -83,6 +96,17 @@ init([]) ->
         
         end.
 
+        
+start_queues()->
+    lists:foreach(fun(Elem)->
+                    case Elem of 
+                        {Key, Erlog,_Pid} ->
+                            ets:insert(?SYSTEMS, {Key, Erlog, spawn_link(?MODULE, myqueue, [Key] )});
+                        {Key, Erlog} ->
+                            ets:insert(?SYSTEMS, {Key, Erlog, spawn_link(?MODULE, myqueue, [Key] )})
+                    end         
+                  end, ets:tab2list(?SYSTEMS)).
+        
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
@@ -104,7 +128,8 @@ handle_call({ lookup, Body}, _From, State) ->
 handle_call(flush_erlog, _From ,State) ->
     ?LOG_DEBUG("start loading from   ~n", []),
     {ok, Erlog} = erlog:new(),
-    {reply, ok, State#monitor{erlog1=Erlog, current_version=undefined}};
+    
+    {reply, ok, State#monitor{erlog=Erlog, current_version=undefined}};
     
 
 %%DEPRECATED
@@ -129,6 +154,7 @@ handle_call(Info,_From ,State) ->
 %%  2) dump_db
 % and next time  for saving time 
 %   1) load from dump
+%% DEPRECATED
 handle_cast( {erlog_code, Terms}, State)->
    Erlog = State#monitor.erlog1,
    Db = get_inner_db(Erlog),
@@ -146,13 +172,18 @@ handle_cast( {erlog_code, Terms}, State)->
 handle_cast({load_from_dump, FileName}, State) ->
     ets:delete(?SYSTEMS),
     {ok, ?SYSTEMS} = ets:file2tab(FileName),
+    start_queues(),
     case ets:lookup(?SYSTEMS, "") of
           [] -> 
            {ok, Erlog1} = erlog:new(),
-            ets:insert(?SYSTEMS, {"", Erlog1 }),
+            ets:insert(?SYSTEMS, {"", Erlog1, spawn_link(?MODULE, myqueue, [""])  }),
             ?LOG_DEBUG("loaded normal \n", []),
             {noreply, State#monitor{db_loaded=true}};
           {"", Value}->
+            ets:insert(?SYSTEMS, {"", Value, spawn_link(?MODULE, myqueue, [""])  }),
+            {noreply, State#monitor{db_loaded=true}};
+          {"", Value, _Pid}->
+            ets:insert(?SYSTEMS, {"", Value, spawn_link(?MODULE, myqueue, [""])  }),
             {noreply, State#monitor{db_loaded=true}}
     end
 
@@ -167,8 +198,9 @@ handle_cast({dump_db, FileName}, State) ->
     ?LOG_DEBUG("saved normal \n", []),
     {noreply, State}
 ;
-handle_cast({create_expert, Username}, State)->
+handle_cast({create_expert, Username, Erlog}, State)->
     LS = State#monitor.systems,
+    ets:insert(?SYSTEMS, {Username,  Erlog, spawn_link(?MODULE, myqueue, [ Username]) }),
     {noreply,  State#monitor{systems=[Username|LS]}}   
 ;
 %%DEPRECATED
@@ -195,26 +227,8 @@ handle_cast(load_from_db, State) ->
                                     NewErl 
                             end
                        end, Erlog, Rows),
-    {noreply, State#monitor{erlog1=NewErl, db_loaded=true}};    
+    {noreply, State#monitor{erlog1=NewErl, db_loaded=true}}.
     
-handle_cast({add, Key, Params, Raw, Sign}, MyState) ->
-    ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
-    Pid = MyState#monitor.pid,
-    Query = <<"INSERT INTO facts( Name, Value, Sign) VALUES(?, ?, ?)">>,
-
-    ok = mysql:query(Pid, Query, [Key, Raw, Sign]),
-    Erlog = MyState#monitor.erlog,
-    Erlog1 = MyState#monitor.erlog1,
-    Ets = erlang:localtime(),
-    NewEts = erws_api:format_date(Ets),
-    Functor = list_to_atom(binary_to_list(Key)),
-    NewRuleL = [Functor, NewEts|Params],
-    NewRule= list_to_tuple(NewRuleL),
-    Goal  = {assert, NewRule},
-    { {succeed, _}, NewErl} = erlog:prove(Goal, Erlog), 
-    { {succeed, _}, NewErl1} = erlog:prove(Goal, Erlog1), 
-    {noreply, MyState#monitor{erlog=NewErl, erlog1=NewErl1}}.
-
 handle_info(Message,  State)->
     ?LOG_DEBUG("undefined child process ~p ~n", [Message]),
      {noreply,  State}.
@@ -236,14 +250,14 @@ get_inner_ets(Erl0)->
 erlog_once4export(NameOfExport, Goal)->
     case ets:lookup(?SYSTEMS, NameOfExport) of 
         [] -> {error, <<"expert system does not exist">>};
-        [{NameOfExport, Erlog}]->
+        [{NameOfExport, Erlog, Pid}]->
             ?LOG_DEBUG("start coal from  ~p ~n", [Goal]),
             case catch erlog:prove(Goal, Erlog) of
                 {{succeed, Vs}, NewErl}->
-                        ets:insert(?SYSTEMS, {NameOfExport, NewErl}),
+                        ets:insert(?SYSTEMS, {NameOfExport, NewErl, Pid}),
                         Vs;
                 {fail, NewErl}->
-                         ets:insert(?SYSTEMS, {NameOfExport, NewErl}),
+                         ets:insert(?SYSTEMS, {NameOfExport, NewErl, Pid}),
                         false;
                 {{error,Error}, _NewErl}->
                         {error, Error};
@@ -280,8 +294,7 @@ create_expert(Username, MyTerms)->
                             Goal  = {assert, Elem},
                             { {succeed,_}, NewErl1} = erlog:prove(Goal, Erl), 
                             NewErl1 end, Erlog, MyTerms), 
-    ets:insert(?SYSTEMS, {Username, FinaleErl}),
-    gen_server:cast(?MODULE, {create_expert, Username}).
+    gen_server:cast(?MODULE, {create_expert, Username, FinaleErl}).
     
 save_db()->
     gen_server:cast(?MODULE, dump_db).
@@ -313,6 +326,7 @@ get_api_stat()->
     ets:tab2list(?STAT)
 .
 
+%%DEPRECATED
 erlog_load_code(Code)->
   File = tmp_export_file(),
   %%HACK add \n at the end of file for correct parsing
@@ -327,51 +341,57 @@ lookup(Body, Timout)->
 lookup(Body)->
     lookup(Body, 20000).
     
- 
+
+    
+myqueue(Key)->
+    receive 
+      {add, NameOfExport, Key, Params, Raw, Sign }->
+          case ets:lookup(?SYSTEMS, NameOfExport ) of
+             [{NameOfExport, Erlog, Pid}]->
+                ?CONSOLE_LOG("add to ~p  ~p~n", [NameOfExport, {Key, Params, Raw} ]),
+                Ets = erlang:localtime(),
+                NewEts = erws_api:format_date(Ets),
+                Functor = list_to_atom(binary_to_list(Key)),
+                NewRuleL = [Functor, NewEts|Params],
+                NewRule = list_to_tuple(NewRuleL),
+                Db = get_inner_db(Erlog),
+                NewDb = erlog_int:asserta_clause(NewRule, Db),
+                Est = Erlog#erlog.est,
+                ets:insert(?SYSTEMS, {NameOfExport, Erlog#erlog{est=Est#est{db=NewDb}} } ),
+                myqueue(Key);
+            []->
+                ?CONSOLE_LOG("i didn't find expert system for ~p ~n", [NameOfExport]),
+                exit(abnormal)
+            end
+    
+    end
+.
+    
+    
+% it shoul
 assert(NameOfExport, Key, Params, Raw, Sign)->
     %% ADDING TO DEFAULT
     assert(Key, Params, Raw, Sign),
     case ets:lookup(?SYSTEMS, NameOfExport) of 
         [] -> {fail, non_exist};
-        [{NameOfExport, Erlog}]->
-            Ets = erlang:localtime(),
-            NewEts = erws_api:format_date(Ets),
-            Functor = list_to_atom(binary_to_list(Key)),
-            NewRuleL = [Functor, NewEts|Params],
-            NewRule = list_to_tuple(NewRuleL),
-            Db = get_inner_db(Erlog),
-            NewDb = erlog_int:asserta_clause(NewRule, Db),
-            Est = Erlog#erlog.est,
-            ets:insert(?SYSTEMS, {NameOfExport, Erlog#erlog{est=Est#est{db=NewDb}} } ),
-            true
+        [{NameOfExport, _Erlog, Pid}]->
+            Pid ! { add, NameOfExport, Key, Params, Raw, Sign}
     end.
 
 assert(Key, Params, Raw, Sign)->
 %% turn of check doubles
-%%   case ets:lookup(?UNIQ, Sign) of
-%%      [] ->  
-%%           ets:insert(?UNIQ, {Sign, 1}),
-            MyState = api_table_holder:status(),
-            Erlog1 = MyState#monitor.erlog1,
-            
-            Db1 = get_inner_db(Erlog1),
-            ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
-            Pid = MyState#monitor.pid, 
-            Query = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
-            ok = mysql:query(Pid, Query, [Key, Raw, Sign]),
-            Ets = erlang:localtime(),
-            NewEts = erws_api:format_date(Ets),
-            Functor = list_to_atom(binary_to_list(Key)),
-            NewRuleL = [Functor, NewEts|Params],
-            NewRule = list_to_tuple(NewRuleL),
-            NewDb = erlog_int:asserta_clause(NewRule, Db1),
-            Est = Erlog1#erlog.est,
-            ets:insert(?SYSTEMS, {"", Erlog1#erlog{est=Est#est{db=NewDb}} } ) ,
-            ?LOG_DEBUG("result erlog 2 ~p \n", [NewDb])
-%%        _ ->   
-%%          ?LOG_DEBUG("we have this fact in memory already ~p,~n", [{Sign, Key, Params}]),
-%%         true
-%% end.
+    MyState = api_table_holder:status(),
+    ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
+    Pid = MyState#monitor.pid, 
+    Query = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
+    ok = mysql:query(Pid, Query, [Key, Raw, Sign]),
+    case ets:lookup(?SYSTEMS, "") of
+            [{"", _Erlog, Pid}]->             
+              Pid ! { add, "", Key, Params, Raw, Sign};
+            _ ->   
+              ?LOG_DEBUG("we didn't find default system ,~n", []),
+              true
+     end
 .
 
 
