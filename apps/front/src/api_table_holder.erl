@@ -358,7 +358,7 @@ myqueue(NameOfExport)->
                 NewDb = erlog_int:asserta_clause(NewRule, Db),
                 Est = Erlog#erlog.est,
                 ets:insert(?SYSTEMS, {NameOfExport, Erlog#erlog{est=Est#est{db=NewDb}}, self() } ),
-                myqueue(Key);
+                myqueue(NameOfExport);
             []->
                 ?CONSOLE_LOG("i didn't find expert system for ~p ~n", [NameOfExport]),
                 exit(abnormal)
