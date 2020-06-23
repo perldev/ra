@@ -364,7 +364,7 @@ myqueue(NameOfExport)->
                 exit(abnormal)
             end;
       K ->
-          ?CONSOLE_LOG("unexpected for  ~p  ~p ~n", [Key, K]),
+          ?CONSOLE_LOG("unexpected for  ~p  ~p ~n", [NameOfExport, K]),
           myqueue(NameOfExport)
     end
 .
