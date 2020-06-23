@@ -380,6 +380,7 @@ assert(NameOfExport, Key, Params, Raw, Sign)->
             Pid ! { add, NameOfExport, Key, Params, Raw, Sign}
     end.
 
+
 assert(Key, Params, Raw, Sign)->
 %% turn of check doubles
     MyState = api_table_holder:status(),
@@ -388,12 +389,13 @@ assert(Key, Params, Raw, Sign)->
     Query = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
     ok = mysql:query(Pid, Query, [Key, Raw, Sign]),
     case ets:lookup(?SYSTEMS, "") of
-            [{"", _Erlog, Pid}]->             
+            [] ->   
+              ?LOG_DEBUG("we didn't find default system  ~n", [] ),
+              true;
+            _ ->              
               ?LOG_DEBUG("adding to default system ~n", [ ]),
-              Pid ! { add, "", Key, Params, Raw, Sign};
-            Res ->   
-              ?LOG_DEBUG("we didn't find default system ~p ~n", [Res] ),
-              true
+              Pid ! { add, "", Key, Params, Raw, Sign}
+           
      end
 .
 
