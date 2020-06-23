@@ -374,13 +374,14 @@ assert(NameOfExport, Key, Params, Raw, Sign)->
     ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
     Pid = MyState#monitor.pid, 
     Query = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
+    ok = mysql:query(Pid, Query, [Key, Raw, Sign]),
     case ets:lookup(?SYSTEMS, NameOfExport) of 
         [] -> 
             ?LOG_DEBUG("we didn't find default system ~p ~n", [NameOfExport] ),
             {fail, non_exist};
-        [{_, _Erlog, Pid}]->
+        [{_, _Erlog, PidQ}]->
             ?LOG_DEBUG("send new fact to system ~p ~n", [NameOfExport] ),
-            Pid ! { add, NameOfExport, Key, Params, Raw, Sign}
+            PidQ ! { add, NameOfExport, Key, Params, Raw, Sign}
     end.
 
 
