@@ -350,7 +350,7 @@ myqueue(NameOfExport)->
              [{NameOfExport, Erlog, Pid}]->
                 ?CONSOLE_LOG("add to ~p  ~p~n", [NameOfExport, {Key, Params, Raw} ]),
                 Ets = erlang:localtime(),
-                NewEts = erws_api:format_date(Ets),
+                NewEts = erws_api:format_date(Ets),%%this should be deprecated
                 Functor = list_to_atom(binary_to_list(Key)),
                 NewRuleL = [Functor, NewEts|Params],
                 NewRule = list_to_tuple(NewRuleL),

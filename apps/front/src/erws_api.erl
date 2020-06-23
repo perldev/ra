@@ -211,6 +211,15 @@ process([<<"stat">>],  _Body, Req, State)->
                         end,  api_table_holder:get_api_stat()),
      {json, {[{<<"status">>, true}, {<<"result">>, ResultL}]}, Req, State} 
 ;
+process([<<"memory">>],  _Body, Req, State)->
+    
+    WholeSize = ets:info(?SYSTEMS, memory),
+    Systems = ets:foldl(fun({Key, Erlog, _Q}, Accum)->  
+                            Size = erts_debug:size(Erlog),
+                            [ {[{Key, Size}]} | Accum ]
+                        end, [], ?SYSTEMS),
+     {json, {[{<<"status">>, true}, {<<"memory">>, WholeSize}, {<<"expert_systems">>, Systems } ]}, Req, State} 
+;
 process([<<"create_expert">>, U],  Body, Req, State )->
     ?CONSOLE_LOG("create expert system  ~n", []),
     
@@ -227,6 +236,7 @@ process([<<"create_expert">>, U],  Body, Req, State )->
             {500, json, ListJson, Req, State}
         end
 ;
+
 process([<<"add_consistent">>],  _Body, Req, State )->
     ?CONSOLE_LOG("process load  all from dump ~n", []),
     api_table_holder:add_consisten_knowledge(),
