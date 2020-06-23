@@ -378,7 +378,7 @@ assert(NameOfExport, Key, Params, Raw, Sign)->
         [] -> 
             ?LOG_DEBUG("we didn't find default system ~p ~n", [NameOfExport] ),
             {fail, non_exist};
-        [{NameOfExport, _Erlog, Pid}]->
+        [{_, _Erlog, Pid}]->
             ?LOG_DEBUG("send new fact to system ~p ~n", [NameOfExport] ),
             Pid ! { add, NameOfExport, Key, Params, Raw, Sign}
     end.
