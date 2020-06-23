@@ -388,7 +388,7 @@ assert(Key, Params, Raw, Sign)->
             [{"", _Erlog, Pid}]->             
               Pid ! { add, "", Key, Params, Raw, Sign};
             _ ->   
-              ?LOG_DEBUG("we didn't find default system ~p,~n", ),
+              ?LOG_DEBUG("we didn't find default system ~n", [] ),
               true
      end
 .
