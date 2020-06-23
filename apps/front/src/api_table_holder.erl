@@ -62,11 +62,11 @@ init([]) ->
             {ok, DumpName}->
                 %% load from file
                 {ok, ?SYSTEMS} = ets:file2tab(DumpName),
-                start_queues(),
                 case ets:lookup(?SYSTEMS, "") of
                     [] -> 
                         {ok, Erlog1} = erlog:new(),
-                        ets:insert(?SYSTEMS, {"", Erlog1, spawn_link(?MODULE, myqueue, [""]) }), %empty key for default expert system
+                        ets:insert(?SYSTEMS, {"", Erlog1 }), %empty key for default expert system
+                        start_queues(),
                         {ok, #monitor{pid=Pid, 
                                       erlog=Erlog,
                                       erlog1 = Erlog1,
@@ -74,8 +74,8 @@ init([]) ->
                                       db_loaded=true
                                      }
                         };
-                     [{"", Erlog1}]->
-                       ets:insert(?SYSTEMS, {"", Erlog1, spawn_link(?MODULE, myqueue, [""]) }), %empty key for default expert system
+                     [{"", Erlog1}]->                     
+                       start_queues(),
                        {ok, #monitor{pid=Pid, 
                                      erlog=Erlog,
                                      erlog1 = Erlog1,
@@ -84,7 +84,7 @@ init([]) ->
                                     }
                         };
                     [{"", Erlog1, _P}]->
-                       ets:insert(?SYSTEMS, {"", Erlog1, spawn_link(?MODULE, myqueue, [""]) }), %empty key for default expert system
+                       start_queues(),
                        {ok, #monitor{pid=Pid, 
                                      erlog=Erlog,
                                      erlog1 = Erlog1,
@@ -128,7 +128,6 @@ handle_call({ lookup, Body}, _From, State) ->
 handle_call(flush_erlog, _From ,State) ->
     ?LOG_DEBUG("start loading from   ~n", []),
     {ok, Erlog} = erlog:new(),
-    
     {reply, ok, State#monitor{erlog=Erlog, current_version=undefined}};
     
 
@@ -389,7 +388,7 @@ assert(Key, Params, Raw, Sign)->
             [{"", _Erlog, Pid}]->             
               Pid ! { add, "", Key, Params, Raw, Sign};
             _ ->   
-              ?LOG_DEBUG("we didn't find default system ,~n", []),
+              ?LOG_DEBUG("we didn't find default system ~p,~n", ),
               true
      end
 .
