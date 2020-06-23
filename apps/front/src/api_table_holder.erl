@@ -101,9 +101,9 @@ start_queues()->
     lists:foreach(fun(Elem)->
                     case Elem of 
                         {Key, Erlog,_Pid} ->
-                            ets:insert(?SYSTEMS, {Key, Erlog, spawn(?MODULE, myqueue, [Key] )});
+                            ets:insert(?SYSTEMS, {Key, Erlog, spawn_link(?MODULE, myqueue, [Key] )});
                         {Key, Erlog} ->
-                            ets:insert(?SYSTEMS, {Key, Erlog, spawn(?MODULE, myqueue, [Key] )})
+                            ets:insert(?SYSTEMS, {Key, Erlog, spawn_link(?MODULE, myqueue, [Key] )})
                     end         
                   end, ets:tab2list(?SYSTEMS)).
         
@@ -357,7 +357,7 @@ myqueue(NameOfExport)->
                 Db = get_inner_db(Erlog),
                 NewDb = erlog_int:asserta_clause(NewRule, Db),
                 Est = Erlog#erlog.est,
-                ets:insert(?SYSTEMS, {NameOfExport, Erlog#erlog{est=Est#est{db=NewDb}} } ),
+                ets:insert(?SYSTEMS, {NameOfExport, Erlog#erlog{est=Est#est{db=NewDb}}, self() } ),
                 myqueue(Key);
             []->
                 ?CONSOLE_LOG("i didn't find expert system for ~p ~n", [NameOfExport]),
