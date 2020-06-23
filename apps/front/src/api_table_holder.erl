@@ -101,9 +101,9 @@ start_queues()->
     lists:foreach(fun(Elem)->
                     case Elem of 
                         {Key, Erlog,_Pid} ->
-                            ets:insert(?SYSTEMS, {Key, Erlog, spawn_link(?MODULE, myqueue, [Key] )});
+                            ets:insert(?SYSTEMS, {Key, Erlog, spawn(?MODULE, myqueue, [Key] )});
                         {Key, Erlog} ->
-                            ets:insert(?SYSTEMS, {Key, Erlog, spawn_link(?MODULE, myqueue, [Key] )})
+                            ets:insert(?SYSTEMS, {Key, Erlog, spawn(?MODULE, myqueue, [Key] )})
                     end         
                   end, ets:tab2list(?SYSTEMS)).
         
@@ -342,7 +342,8 @@ lookup(Body)->
     
 
     
-myqueue(Key)->
+myqueue(NameOfExport)->
+    ?CONSOLE_LOG("working queue for  ~p  ~n", [NameOfExport]),
     receive 
       {add, NameOfExport, Key, Params, Raw, Sign }->
           case ets:lookup(?SYSTEMS, NameOfExport ) of
@@ -361,8 +362,10 @@ myqueue(Key)->
             []->
                 ?CONSOLE_LOG("i didn't find expert system for ~p ~n", [NameOfExport]),
                 exit(abnormal)
-            end
-    
+            end;
+      K ->
+          ?CONSOLE_LOG("unexpected for  ~p  ~p ~n", [Key, K]),
+          myqueue(NameOfExport)
     end
 .
     
