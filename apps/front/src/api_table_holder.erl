@@ -370,7 +370,10 @@ myqueue(Key)->
 % it shoul
 assert(NameOfExport, Key, Params, Raw, Sign)->
     %% ADDING TO DEFAULT
-    assert(Key, Params, Raw, Sign),
+    MyState = api_table_holder:status(),
+    ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
+    Pid = MyState#monitor.pid, 
+    Query = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
     case ets:lookup(?SYSTEMS, NameOfExport) of 
         [] -> 
             ?LOG_DEBUG("we didn't find default system ~p ~n", [NameOfExport] ),
@@ -382,21 +385,7 @@ assert(NameOfExport, Key, Params, Raw, Sign)->
 
 
 assert(Key, Params, Raw, Sign)->
-%% turn of check doubles
-    MyState = api_table_holder:status(),
-    ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
-    Pid = MyState#monitor.pid, 
-    Query = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
-    ok = mysql:query(Pid, Query, [Key, Raw, Sign]),
-    case ets:lookup(?SYSTEMS, "") of
-            [] ->   
-              ?LOG_DEBUG("we didn't find default system  ~n", [] ),
-              true;
-            _ ->              
-              ?LOG_DEBUG("adding to default system ~n", [ ]),
-              Pid ! { add, "", Key, Params, Raw, Sign}
-           
-     end
+    assert("", Key, Params, Raw, Sign)
 .
 
 
