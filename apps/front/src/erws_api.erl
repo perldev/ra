@@ -145,7 +145,7 @@ process([Expert, <<"once">>, Name],  Body, Req, State)->
             {json, {[{<<"status">>, true}, {<<"result">>, ResultL}]}, Req, State} 
     end
 ;
-process([<<"once">>],  Body, Req, State)->
+process([ExpertName, <<"once">>],  Body, Req, State)->
     ?CONSOLE_LOG("call aim ~p ~n", [Body]),
 %     {fact,1,2,3,4,5}
 %     [ {[{<<"name">>,<<"X">>}]}, 1,3,4]
@@ -154,7 +154,7 @@ process([<<"once">>],  Body, Req, State)->
             ErrorDesc = erlog_io:write1(Error),
             raw_answer(500, to_binary(ErrorDesc), Req, State);
         {ok, Terms}->
-          case api_table_holder:erlog_once(Terms) of
+          case api_table_holder:erlog_once4export(ExpertName, Terms) of
               {error, Error}->
                     ErrorDesc = erlog_io:write1(Error),
                     ListJson = {[{<<"status">>, <<"error">>}, {<<"description">>, to_binary(ErrorDesc) }]},
@@ -214,9 +214,9 @@ process([<<"stat">>],  _Body, Req, State)->
 process([<<"memory">>],  _Body, Req, State)->
     
     WholeSize = ets:info(?SYSTEMS, memory),
-    Systems = ets:foldl(fun({Key, Erlog, _Q}, Accum)->  
-                            Size = erts_debug:size(Erlog),
-                            [ {[{Key, Size}]} | Accum ]
+    Systems = ets:foldl(fun({Key, _Erlog, _Q}, Accum)->  
+%                             Size = erts_debug:size(Erlog),
+                            [ Key | Accum ]
                         end, [], ?SYSTEMS),
      {json, {[{<<"status">>, true}, {<<"memory">>, WholeSize}, {<<"expert_systems">>, Systems } ]}, Req, State} 
 ;
