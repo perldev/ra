@@ -341,8 +341,15 @@ erlog_load_code(Code)->
   {ok, Terms } = erlog_io:read_file(File),  
   gen_server:cast(?MODULE, {erlog_code, Terms}).
 
-lookup(ExpertSytem, Body, Timout)->
-    gen_server:call(?MODULE, {lookup, ExpertSytem, Body}, Timout).
+lookup(ExpertSytem, Body, _Timout)->
+    MyState = api_table_holder:status(),
+    Pid = MyState#monitor.pid, 
+    ?LOG_DEBUG("get msg call ~p to ~p ~n", [Body, ExpertSytem]),
+    Pid = MyState#monitor.pid, 
+    Query = <<"SELECT  Name, Value, ts FROM  facts", ExpertSytem/binary, " WHERE Value like CONCAT('%', ? ,'%') ">>,
+    {ok, ColumnNames, Rows} = mysql:query(Pid, Query, [Body]),
+    ?LOG_DEBUG("found  ~p ~n", [{ColumnNames, Rows}]),
+    Rows.
   
   
 lookup(Body, Timout)->
