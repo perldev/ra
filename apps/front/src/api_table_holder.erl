@@ -116,9 +116,9 @@ handle_call(status,_From ,State) ->
     {reply, State, State};
 
 handle_call({ lookup,  ExpertSytem, Body}, _From, State) ->
-    ?LOG_DEBUG("get msg call ~p ~n", [Body]),
+    ?LOG_DEBUG("get msg call ~p to ~p ~n", [Body, ExpertSytem]),
     Pid = State#monitor.pid, 
-    Query = <<"SELECT  Name, Value, ts FROM  facts">>, ExpertSytem/binary, <<" WHERE Value like CONCAT('%', ? ,'%') ">>,
+    Query = <<"SELECT  Name, Value, ts FROM  facts", ExpertSytem/binary, " WHERE Value like CONCAT('%', ? ,'%') ">>,
     {ok, ColumnNames, Rows} = mysql:query(Pid, Query, [Body]),
     ?LOG_DEBUG("found  ~p ~n", [{ColumnNames, Rows}]),
     {reply, Rows, State};    
@@ -386,7 +386,7 @@ assert(NameOfExport, Key, Params, Raw, Sign)->
     MyState = api_table_holder:status(),
     ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
     Pid = MyState#monitor.pid, 
-    Query = <<"INSERT INTO facts">>,NameOfExport/binary,<<"(Name, Value, Sign) VALUES(?, ?, ?)">>,
+    Query = <<"INSERT INTO facts", NameOfExport/binary, "(Name, Value, Sign) VALUES(?, ?, ?)">>,
     Query2 = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
     ok = mysql:query(Pid, Query2, [Key, Raw, Sign]),
     ok = mysql:query(Pid, Query, [Key, Raw, Sign]),
