@@ -7,6 +7,7 @@
          assert/5,
          lookup/1,
          lookup/2,
+         lookup/3,
          erlog_once4export/2,
          save_db/1, save_db/0, 
          load_from_dump/1, load_from_db/0, 
@@ -114,6 +115,13 @@ handle_call(status,_From ,State) ->
     ?LOG_DEBUG("get msg call ~p ~n", [status]),
     {reply, State, State};
 
+handle_call({ lookup,  ExpertSytem, Body}, _From, State) ->
+    ?LOG_DEBUG("get msg call ~p ~n", [Body]),
+    Pid = State#monitor.pid, 
+    Query = <<"SELECT  Name, Value, ts FROM  facts">>, ExpertSytem/binary, <<" WHERE Value like CONCAT('%', ? ,'%') ">>,
+    {ok, ColumnNames, Rows} = mysql:query(Pid, Query, [Body]),
+    ?LOG_DEBUG("found  ~p ~n", [{ColumnNames, Rows}]),
+    {reply, Rows, State};    
 handle_call({ lookup, Body}, _From, State) ->
     ?LOG_DEBUG("get msg call ~p ~n", [Body]),
     Pid = State#monitor.pid, 
@@ -333,6 +341,10 @@ erlog_load_code(Code)->
   {ok, Terms } = erlog_io:read_file(File),  
   gen_server:cast(?MODULE, {erlog_code, Terms}).
 
+lookup(ExpertSytem, Body, Timout)->
+    gen_server:call(?MODULE, {lookup, ExpertSytem, Body}, Timout).
+  
+  
 lookup(Body, Timout)->
     gen_server:call(?MODULE, {lookup, Body}, Timout).
   
@@ -366,13 +378,30 @@ myqueue(NameOfExport)->
       K ->
           ?CONSOLE_LOG("unexpected for  ~p  ~p ~n", [NameOfExport, K]),
           myqueue(NameOfExport)
-    end
-.
+    end.
     
-    
-% it shoul
+% it should
 assert(NameOfExport, Key, Params, Raw, Sign)->
     %% ADDING TO DEFAULT
+    MyState = api_table_holder:status(),
+    ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
+    Pid = MyState#monitor.pid, 
+    Query = <<"INSERT INTO facts">>,NameOfExport/binary,<<"(Name, Value, Sign) VALUES(?, ?, ?)">>,
+    Query2 = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
+    ok = mysql:query(Pid, Query2, [Key, Raw, Sign]),
+    ok = mysql:query(Pid, Query, [Key, Raw, Sign]),
+    case ets:lookup(?SYSTEMS, NameOfExport) of 
+        [] -> 
+            ?LOG_DEBUG("we didn't find default system ~p ~n", [NameOfExport] ),
+            {fail, non_exist};
+        [{_, _Erlog, PidQ}]->
+            ?LOG_DEBUG("send new fact to system ~p ~n", [NameOfExport] ),
+            PidQ ! { add, NameOfExport, Key, Params, Raw, Sign}
+    end.
+
+
+assert(Key, Params, Raw, Sign)->
+    NameOfExport  = <<"">>,
     MyState = api_table_holder:status(),
     ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
     Pid = MyState#monitor.pid, 
@@ -387,10 +416,6 @@ assert(NameOfExport, Key, Params, Raw, Sign)->
             PidQ ! { add, NameOfExport, Key, Params, Raw, Sign}
     end.
 
-
-assert(Key, Params, Raw, Sign)->
-    assert("", Key, Params, Raw, Sign)
-.
 
 
 id_generator()->

@@ -273,13 +273,20 @@ process([<<"load">>],  Body, Req, State )->
     api_table_holder:erlog_load_code(Body),
     true_response(Req, State)    
 ;
+process([ExperSystem, <<"lookup">>],  Body, Req, State )->
+    ?CONSOLE_LOG("process search from  ~p ~n",[Body]),
+    List = api_table_holder:lookup(ExperSystem, Body, 60000),
+    Res = lists:map(fun([Name, Value, Ets])->   {[{<<"type">>, Name}, {<<"value">>, json_decode(Value)}, {<<"date">>,  list_to_binary(format_date(Ets)) }]}   end,  List),
+    ListJson = {[{<<"status">>, true}, {<<"result">>, Res}]},
+    {json, ListJson, Req, State}
+    
+;
 process([<<"lookup">>],  Body, Req, State )->
     ?CONSOLE_LOG("process search from  ~p ~n",[Body]),
     List = api_table_holder:lookup(Body),
     Res = lists:map(fun([Name, Value, Ets])->   {[{<<"type">>, Name}, {<<"value">>, json_decode(Value)}, {<<"date">>,  list_to_binary(format_date(Ets)) }]}   end,  List),
     ListJson = {[{<<"status">>, true}, {<<"result">>, Res}]},
     {json, ListJson, Req, State}
-    
 ;
 process([ExpertSystem, <<"assert">>, Name],  Body, Req, State )->
     ?CONSOLE_LOG("process request from ~p ~p ~n",[Name, Body]),
