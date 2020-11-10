@@ -220,6 +220,15 @@ process([<<"memory">>],  _Body, Req, State)->
                         end, [], ?SYSTEMS),
      {json, {[{<<"status">>, true}, {<<"memory">>, WholeSize}, {<<"expert_systems">>, Systems } ]}, Req, State} 
 ;
+process([<<"check_store">>, U],  Body, Req, State )->
+      Res = api_table_holder:check_store(U),
+      ListJson = {[ {<<"status">>, Res} ]},
+      {200, json, ListJson, Req, State}
+;
+process([<<"create_store">>, U],  Body, Req, State )->
+      Res = api_table_holder:create_store(U),
+      ListJson = {[ {<<"status">>, Res} ]},
+      {200, json, ListJson, Req, State};
 process([<<"create_expert">>, U],  Body, Req, State )->
     ?CONSOLE_LOG("create expert system  ~n", []),
     
@@ -236,7 +245,6 @@ process([<<"create_expert">>, U],  Body, Req, State )->
             {500, json, ListJson, Req, State}
         end
 ;
-
 process([<<"add_consistent">>],  _Body, Req, State )->
     ?CONSOLE_LOG("process load  all from dump ~n", []),
     api_table_holder:add_consisten_knowledge(),
@@ -279,7 +287,6 @@ process([ExperSystem, <<"lookup">>],  Body, Req, State )->
     Res = lists:map(fun([Name, Value, Ets])->   {[{<<"type">>, Name}, {<<"value">>, json_decode(Value)}, {<<"date">>,  list_to_binary(format_date(Ets)) }]}   end,  List),
     ListJson = {[{<<"status">>, true}, {<<"result">>, Res}]},
     {json, ListJson, Req, State}
-    
 ;
 process([<<"lookup">>],  Body, Req, State )->
     ?CONSOLE_LOG("process search from  ~p ~n",[Body]),

@@ -5,6 +5,7 @@
 -export([start_link/0, stop/0, 
          status/0, assert/4,
          assert/5,
+         assert/6,
          lookup/1,
          lookup/2,
          lookup/3,
@@ -13,8 +14,11 @@
          load_from_dump/1, load_from_db/0, 
          flush_erlog/0, add_consisten_knowledge/0,
          erlog_once/1, erlog_load_code/1, 
-         load_erlog/0, create_expert/2, tmp_export_file/0,
+         load_erlog/0, 
+         create_store/1,
+         create_expert/2, tmp_export_file/0,
          api_stat/2, get_api_stat/0, start_queues/0,
+         check_store/1,
          myqueue/1]).
 
 -include("erws_console.hrl").
@@ -111,10 +115,12 @@ start_queues()->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+%TODO deprecate it add cache servers of states
 handle_call(status,_From ,State) ->
     ?LOG_DEBUG("get msg call ~p ~n", [status]),
     {reply, State, State};
-
+    
+%DEPRECATED
 handle_call({ lookup,  ExpertSytem, Body}, _From, State) ->
     ?LOG_DEBUG("get msg call ~p to ~p ~n", [Body, ExpertSytem]),
     Pid = State#monitor.pid, 
@@ -277,6 +283,24 @@ erlog_once4export(NameOfExport, Goal)->
    
 status() ->
         gen_server:call(?MODULE, status).
+
+check_store(Username)->
+    MyState = api_table_holder:status(),
+    Pid = MyState#monitor.pid, 
+    Q = <<"SHOW TABLES LIKE 'facts", Username/binary, "'">>, 
+    case mysql:query(Pid, Q, []) of
+        {ok, _ColumnNames, []} -> false;
+        {ok, _ColumnNames, _} -> true
+    end.
+        
+create_store(UserName)->
+    MyState = api_table_holder:status(),
+    Pid = MyState#monitor.pid, 
+    Query = <<"CREATE TABLE `facts", UserName/binary, "` (`id` int(11) NOT NULL AUTO_INCREMENT, `Name` varchar(255) DEFAULT NULL,   `Value` varchar(1024) DEFAULT NULL,   `Sign` varchar(255) DEFAULT '',`ts` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,  `meta` varchar(1024) DEFAULT '',  PRIMARY KEY (`id`)) ENGINE=InnoDB  DEFAULT CHARSET=utf8">>,
+    case mysql:query(Pid, Query, []) of 
+       ok -> true;
+       _ -> false
+    end.
         
 stop()->
         gen_server:call(?MODULE, stop).
@@ -341,6 +365,8 @@ erlog_load_code(Code)->
   {ok, Terms } = erlog_io:read_file(File),  
   gen_server:cast(?MODULE, {erlog_code, Terms}).
 
+
+%TODO use timeout 
 lookup(ExpertSytem, Body, _Timout)->
     MyState = api_table_holder:status(),
     Pid = MyState#monitor.pid, 
@@ -350,10 +376,19 @@ lookup(ExpertSytem, Body, _Timout)->
     {ok, ColumnNames, Rows} = mysql:query(Pid, Query, [Body]),
     ?LOG_DEBUG("found  ~p ~n", [{ColumnNames, Rows}]),
     Rows.
+ 
+ 
+%TODO use timeout 
+lookup(Body, _Timeout)->
+    MyState = api_table_holder:status(),
+    ?LOG_DEBUG("get msg call ~p ~n", [Body]),
+    Pid = MyState#monitor.pid, 
+    Query = <<"SELECT  Name, Value, ts FROM  facts WHERE Value like CONCAT('%', ? ,'%') ">>,
+    {ok, ColumnNames, Rows} = mysql:query(Pid, Query, [Body]),
+    ?LOG_DEBUG("found  ~p ~n", [{ColumnNames, Rows}]), 
+    Rows.
+ 
   
-  
-lookup(Body, Timout)->
-    gen_server:call(?MODULE, {lookup, Body}, Timout).
   
 
 lookup(Body)->
@@ -389,6 +424,17 @@ myqueue(NameOfExport)->
     
 % it should
 assert(NameOfExport, Key, Params, Raw, Sign)->
+    assert(NameOfExport, Key, Params, Raw, Sign, 1).
+
+assert(NameOfExport, Key, Params, Raw, Sign, 0)->
+    %% ADDING TO DEFAULT
+    MyState = api_table_holder:status(),
+    ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
+    Pid = MyState#monitor.pid, 
+    Query2 = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
+    ok = mysql:query(Pid, Query2, [Key, Raw, Sign])
+;
+assert(NameOfExport, Key, Params, Raw, Sign, 1)->
     %% ADDING TO DEFAULT
     MyState = api_table_holder:status(),
     ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
