@@ -213,7 +213,19 @@ handle_cast({dump_db, FileName}, State) ->
 ;
 handle_cast({create_expert, Username, Erlog}, State)->
     LS = State#monitor.systems,
-    ets:insert(?SYSTEMS, {Username,  Erlog, spawn_link(?MODULE, myqueue, [ Username]) }),
+    case lists:member(Username,   State#monitor.systems) of 
+         false ->  ets:insert(?SYSTEMS, {Username,  Erlog, spawn_link(?MODULE, myqueue, [ Username]) });
+         true ->  
+           case ets:lookup(?SYSTEMS, Username) of 
+              [] -> 
+                ?LOG_DEBUG("we do not find prev system for ~p ~n", [Username]),
+                ets:insert(?SYSTEMS, {Username,  Erlog, spawn_link(?MODULE, myqueue, [ Username]) });
+              [ {Username, _PrevErlog, PidIOfQ } ] ->
+                    ets:insert(?SYSTEMS, {Username,  Erlog, spawn_link(?MODULE, myqueue, [ Username]) }),
+                    erlang:exit(PidIOfQ, normal) 
+           end         
+         
+    end, 
     {noreply,  State#monitor{systems=[Username|LS]}}   
 ;
 %%DEPRECATED
