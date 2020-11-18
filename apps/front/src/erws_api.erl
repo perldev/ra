@@ -12,7 +12,8 @@
          json_decode/1, 
          dict_to_json/1, 
          format_date/1,
-         to_binary/1]).
+         to_binary/1,
+         assertdb/3]).
 
 
 
