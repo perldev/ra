@@ -297,13 +297,13 @@ process([<<"lookup">>],  Body, Req, State )->
 ;
 process([ExpertSystem, <<"assert">>, Name],  Body, Req, State )->
     ?CONSOLE_LOG("process request from ~p ~p ~n",[Name, Body]),
-    Sign = generate_key(Body),
     case catch erws_api:json_decode(Body) of 
             {'EXIT', Error}->
                     ?LOG_DEBUG("cant process rule  ~p ~n ~p", [{Name, Body}, Error]),
                     ListJson = {[{<<"status">>, true}, {<<"decription">>, <<"malformed json">>}]},
                     {500, json, ListJson, Req, State};
             DecodeRule -> 
+                Sign = generate_key(Body),
                 DecodeRuleL = lists:map(fun convert/1, DecodeRule),
                 % YOU should check reponse of erl
                 Res = api_table_holder:assert(ExpertSystem, Name, DecodeRuleL, Body, list_to_binary(Sign)),
@@ -331,6 +331,20 @@ process(Path, _Body, Req, State)->
 
 auth_user(Req, Body, State)->
        undefined
+.
+
+
+% -spec assertdb(string(), string(), list()) -> true|false.
+assertdb(ExpertSystem, NameOfRule, Params):-
+   NewParamas = lists:map(fun to_binary/1, Params),
+   Body = erws_api:json_encode(NewParamas),
+   Sign = generate_key(Body),
+   %% all expert systems created through api is binary
+   Res = api_table_holder:assert(to_binary(ExpertSystem), to_binary(NameOfRule), Params, Body, list_to_binary(Sign)),
+   Res.
+
+   
+
 .
 
 my_time()->
@@ -432,6 +446,7 @@ hexstring(<<X:256/big-unsigned-integer>>) ->
 hexstring(<<X:512/big-unsigned-integer>>) ->
     lists:flatten(io_lib:format("~128.16.0b", [X])).
 
+     
     
 convert(Elem) when is_binary(Elem)->
     to_list(Elem);
