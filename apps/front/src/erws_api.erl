@@ -335,7 +335,7 @@ auth_user(Req, Body, State)->
 
 
 % -spec assertdb(string(), string(), list()) -> true|false.
-assertdb(ExpertSystem, NameOfRule, Params):-
+assertdb(ExpertSystem, NameOfRule, Params)->
    NewParamas = lists:map(fun to_binary/1, Params),
    Body = erws_api:json_encode(NewParamas),
    Sign = generate_key(Body),
@@ -343,9 +343,7 @@ assertdb(ExpertSystem, NameOfRule, Params):-
    Res = api_table_holder:assert(to_binary(ExpertSystem), to_binary(NameOfRule), Params, Body, list_to_binary(Sign)),
    Res.
 
-   
 
-.
 
 my_time()->
  {MegSecs, Secx, _} = now(),
