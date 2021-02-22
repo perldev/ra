@@ -36,7 +36,7 @@ init([]) ->
         },
         
   
-    {ok, { {one_for_all, 10000, 10}, [ApiTableHolder]} }.
+    {ok, { {one_for_one, 10000, 10}, [ApiTableHolder]} }.
 
 %%====================================================================
 %% Internal functions

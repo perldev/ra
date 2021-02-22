@@ -19,6 +19,7 @@
          create_expert/2, tmp_export_file/0,
          api_stat/2, get_api_stat/0, start_queues/0,
          check_store/1,
+	 cast_post_init/0,
          myqueue/1]).
 
 -include("erws_console.hrl").
@@ -30,78 +31,21 @@
 -define(ETS_NAME, ets_name1).
 -define(ETS_NAME1, ets_name).
            
+cast_post_init()->
+    gen_server:cast(?MODULE, post_init)
+.
+
 start_link() ->
           gen_server:start_link({local, ?MODULE},?MODULE, [],[]).
 
+
+
 init([]) ->
+     {ok, Timer} = timer:apply_after(800, ?MODULE, cast_post_init, []),
+     {ok, #monitor{timer=Timer}} 
+.
+
             
-        {ok, Host} = application:get_env(mysql_host),
-        {ok, User} = application:get_env(mysql_user),
-        {ok, Db} = application:get_env(mysql_db),
-        {ok, Pwd} = application:get_env(mysql_pwd),
-        {ok, Pid} = mysql:start_link([{host,  Host},
-                                      {user, User},
-                                      {password, Pwd},
-                                      {database, Db}]),
-        ?LOG_DEBUG("connected to ~p ~n", [Pid]),
-        mysql:prepare(Pid, <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>),
-        Query = <<"SELECT  Name, Value, ts FROM  facts WHERE Value like CONCAT('%', ? , '%')">>,
-        mysql:prepare(Pid, Query),
-        Query1 = <<"SELECT  Name, Value, ts FROM  facts WHERE 1">>,
-        mysql:prepare(Pid, Query1),
-        {ok, Erlog} = erlog:new(erlog_db_ets, ?ETS_NAME),
-        ets:new(?UNIQ, [public, set, named_table]),
-        ets:new(?STAT, [public, set, named_table]),
-
-        case   application:get_env(dump_name) of 
-           undefined->
-                ets:new(?SYSTEMS, [public, set, named_table]),
-                {ok, Erlog1} = erlog:new(),
-                ets:insert(?SYSTEMS, {"", Erlog1}), %empty key for default expert system
-                start_queues(),
-                {ok, #monitor{pid=Pid, 
-                              erlog=Erlog,
-                              erlog1=Erlog1
-                            }
-                };
-            {ok, DumpName}->
-                %% load from file
-                {ok, ?SYSTEMS} = ets:file2tab(DumpName),
-                case ets:lookup(?SYSTEMS, "") of
-                    [] -> 
-                        {ok, Erlog1} = erlog:new(),
-                        ets:insert(?SYSTEMS, {"", Erlog1 }), %empty key for default expert system
-                        start_queues(),
-                        {ok, #monitor{pid=Pid, 
-                                      erlog=Erlog,
-                                      erlog1 = Erlog1,
-                                      dump_name=DumpName,
-                                      db_loaded=true
-                                     }
-                        };
-                     [{"", Erlog1}]->                     
-                       start_queues(),
-                       {ok, #monitor{pid=Pid, 
-                                     erlog=Erlog,
-                                     erlog1 = Erlog1,
-                                     dump_name=DumpName,
-                                     db_loaded=true
-                                    }
-                        };
-                    [{"", Erlog1, _P}]->
-                       start_queues(),
-                       {ok, #monitor{pid=Pid, 
-                                     erlog=Erlog,
-                                     erlog1 = Erlog1,
-                                     dump_name=DumpName,
-                                     db_loaded=true
-                                    }
-                        }
-                end
-        
-        end.
-
-        
 start_queues()->
     lists:foreach(fun(Elem)->
                     case Elem of 
@@ -168,6 +112,75 @@ handle_call(Info,_From ,State) ->
 % and next time  for saving time 
 %   1) load from dump
 %% DEPRECATED
+handle_cast(post_init, State) ->
+        ?LOG_DEBUG("post init normal \n", []),
+        {ok, Host} = application:get_env(mysql_host),
+        {ok, User} = application:get_env(mysql_user),
+        {ok, Db} = application:get_env(mysql_db),
+        {ok, Pwd} = application:get_env(mysql_pwd),
+        {ok, Pid} = mysql:start_link([{host,  Host},
+                                      {user, User},
+                                      {password, Pwd},
+                                      {database, Db}]),
+        ?LOG_DEBUG("connected to ~p ~n", [Pid]),
+        mysql:prepare(Pid, <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>),
+        Query = <<"SELECT  Name, Value, ts FROM  facts WHERE Value like CONCAT('%', ? , '%')">>,
+        mysql:prepare(Pid, Query),
+        Query1 = <<"SELECT  Name, Value, ts FROM  facts WHERE 1">>,
+        mysql:prepare(Pid, Query1),
+        {ok, Erlog} = erlog:new(erlog_db_ets, ?ETS_NAME),
+        ets:new(?UNIQ, [public, set, named_table]),
+        ets:new(?STAT, [public, set, named_table]),
+        case   application:get_env(dump_name) of 
+           undefined->
+                ets:new(?SYSTEMS, [public, set, named_table]),
+                {ok, Erlog1} = erlog:new(),
+                ets:insert(?SYSTEMS, {"", Erlog1}), %empty key for default expert system
+                start_queues(),
+                {noreply, #monitor{pid=Pid, 
+                              erlog=Erlog,
+                              erlog1=Erlog1
+                            }
+                };
+            {ok, DumpName}->
+                %% load from file
+                {ok, ?SYSTEMS} = ets:file2tab(DumpName),
+                case ets:lookup(?SYSTEMS, "") of
+                    [] -> 
+                        {ok, Erlog1} = erlog:new(),
+                        ets:insert(?SYSTEMS, {"", Erlog1 }), %empty key for default expert system
+                        start_queues(),
+                        {noreply, #monitor{pid=Pid, 
+                                      erlog=Erlog,
+                                      erlog1 = Erlog1,
+                                      dump_name=DumpName,
+                                      db_loaded=true
+                                     }
+                        };
+                     [{"", Erlog1}]->                     
+                       start_queues(),
+                       {noreply, #monitor{pid=Pid, 
+                                     erlog=Erlog,
+                                     erlog1 = Erlog1,
+                                     dump_name=DumpName,
+                                     db_loaded=true
+                                    }
+                        };
+                    [{"", Erlog1, _P}]->
+                       start_queues(),
+                       {noreply, #monitor{pid=Pid, 
+                                     erlog=Erlog,
+                                     erlog1 = Erlog1,
+                                     dump_name=DumpName,
+                                     db_loaded=true
+                                    }
+                        }
+                end
+        
+        end;
+   
+    
+
 handle_cast( {erlog_code, Terms}, State)->
    Erlog = State#monitor.erlog1,
    Db = get_inner_db(Erlog),

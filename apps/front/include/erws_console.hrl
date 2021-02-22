@@ -34,7 +34,8 @@
                  dump_name=undefined,
                  db_loaded=false,
                  systems=[],
-                 current_version
+                 current_version,
+		 timer 
                 }).
 
 
