@@ -112,22 +112,27 @@ handle_call(Info,_From ,State) ->
 % and next time  for saving time 
 %   1) load from dump
 %% DEPRECATED
-handle_cast(post_init, State) ->
+handle_cast(post_init, _State) ->
         ?LOG_DEBUG("post init normal \n", []),
-        {ok, Host} = application:get_env(mysql_host),
-        {ok, User} = application:get_env(mysql_user),
-        {ok, Db} = application:get_env(mysql_db),
-        {ok, Pwd} = application:get_env(mysql_pwd),
-        {ok, Pid} = mysql:start_link([{host,  Host},
-                                      {user, User},
-                                      {password, Pwd},
-                                      {database, Db}]),
-        ?LOG_DEBUG("connected to ~p ~n", [Pid]),
-        mysql:prepare(Pid, <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>),
-        Query = <<"SELECT  Name, Value, ts FROM  facts WHERE Value like CONCAT('%', ? , '%')">>,
-        mysql:prepare(Pid, Query),
-        Query1 = <<"SELECT  Name, Value, ts FROM  facts WHERE 1">>,
-        mysql:prepare(Pid, Query1),
+        Pid = case application:get_env(mysql_host) of
+                {ok, Host}->
+                    {ok, User} = application:get_env(mysql_user),
+                    {ok, Db} = application:get_env(mysql_db),
+                    {ok, Pwd} = application:get_env(mysql_pwd),
+                    {ok, Pid1} = mysql:start_link([{host,  Host},
+                                                {user, User},
+                                                {password, Pwd},
+                                                {database, Db}]),
+                    ?LOG_DEBUG("connected to ~p ~n", [Pid1]),
+                    mysql:prepare(Pid1, <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>),
+                    Query = <<"SELECT  Name, Value, ts FROM  facts WHERE Value like CONCAT('%', ? , '%')">>,
+                    mysql:prepare(Pid1, Query),
+                    Query1 = <<"SELECT  Name, Value, ts FROM  facts WHERE 1">>,
+                    mysql:prepare(Pid1, Query1),
+                    Pid1;
+                _ -> undefined
+            end,
+        {ok, Slaves} = application:get_env(slaves, []),
         {ok, Erlog} = erlog:new(erlog_db_ets, ?ETS_NAME),
         ets:new(?UNIQ, [public, set, named_table]),
         ets:new(?STAT, [public, set, named_table]),
@@ -139,7 +144,8 @@ handle_cast(post_init, State) ->
                 start_queues(),
                 {noreply, #monitor{pid=Pid, 
                               erlog=Erlog,
-                              erlog1=Erlog1
+                              erlog1=Erlog1,
+                              slaves=Slaves
                             }
                 };
             {ok, DumpName}->
@@ -154,8 +160,9 @@ handle_cast(post_init, State) ->
                                       erlog=Erlog,
                                       erlog1 = Erlog1,
                                       dump_name=DumpName,
+                                      slaves=Slaves,
                                       db_loaded=true
-                                     }
+                                      }
                         };
                      [{"", Erlog1}]->                     
                        start_queues(),
@@ -163,6 +170,7 @@ handle_cast(post_init, State) ->
                                      erlog=Erlog,
                                      erlog1 = Erlog1,
                                      dump_name=DumpName,
+                                     slaves=Slaves,
                                      db_loaded=true
                                     }
                         };
@@ -172,6 +180,7 @@ handle_cast(post_init, State) ->
                                      erlog=Erlog,
                                      erlog1 = Erlog1,
                                      dump_name=DumpName,
+                                     slaves=Slaves,
                                      db_loaded=true
                                     }
                         }
@@ -234,12 +243,15 @@ handle_cast({create_expert, Username, Erlog}, State)->
                 ?LOG_DEBUG("we do not find prev system for ~p ~n", [Username]),
                 ets:insert(?SYSTEMS, {Username,  Erlog, spawn_link(?MODULE, myqueue, [ Username]) });
               [ {Username, _PrevErlog, PidIOfQ } ] ->
-                    ets:insert(?SYSTEMS, {Username,  Erlog, spawn_link(?MODULE, myqueue, [ Username]) }),
-                    erlang:exit(PidIOfQ, normal) 
-           end         
-         
+                ets:insert(?SYSTEMS, {Username,  Erlog, spawn_link(?MODULE, myqueue, [ Username]) }),
+                erlang:exit(PidIOfQ, normal) 
+           end        
     end, 
     {noreply,  State#monitor{systems=[Username|LS]}}   
+;
+handle_cast({regis_expert_on_slave, {Slave, Username} }, State) ->
+    ets:insert(?SYSTEMS, {Username, slavenode, Slave }),
+    {noreply, State}
 ;
 %%DEPRECATED
 %%TODO add looking by info
@@ -287,7 +299,9 @@ get_inner_ets(Erl0)->
 %yet without standart call   
 erlog_once4export(NameOfExport, Goal)->
     case ets:lookup(?SYSTEMS, NameOfExport) of 
-        [] -> {error, <<"expert system does not exist">>};
+        [] -> {not_found, <<"expert system does not exist">>};
+        [{NameOfExport, slavenode, Slave}]->
+            rpc:call(Slave, ?MODULE, erlog_once4export, [NameOfExport, Goal]);
         [{NameOfExport, Erlog, Pid}]->
             ?LOG_DEBUG("start coal from  ~p ~n", [Goal]),
             case catch erlog:prove(Goal, Erlog) of
@@ -297,15 +311,13 @@ erlog_once4export(NameOfExport, Goal)->
                 {fail, NewErl}->
                          ets:insert(?SYSTEMS, {NameOfExport, NewErl, Pid}),
                         false;
-                {{error,Error}, _NewErl}->
+                {{error, Error}, _NewErl}->
                         {error, Error};
                 {{'EXIT',Error}, _NewErl}->
                         {error, Error}
             end
     end
 .
-   
-   
 status() ->
         gen_server:call(?MODULE, status).
 
@@ -341,8 +353,20 @@ load_from_db()->
 load_erlog()->
     gen_server:cast(?MODULE, load_erlog).
     
-
 create_expert(Username, MyTerms)->
+    MonitorSt = api_table_holder:status(),
+    case MonitorSt#monitor.slaves of 
+       [] -> create_expert_low(Username, MyTerms);
+       Slaves  when is_list(Slaves) ->
+             Slave = lists:nth(rand:uniform(length(Slaves)), Slaves),
+             ?LOG_DEBUG("create expert system ~p  on ~p ~n", [Username, Slave]),
+             ResultCreateExpert = rpc:call(Slave, ?MODULE, create_expert, [Username, MyTerms], 60000),
+             ?LOG_DEBUG("result system ~p ~n", [ResultCreateExpert]),
+             gen_server:cast(?MODULE, {regis_expert_on_slave, {Slave, Username} })
+             
+    end.
+    
+create_expert_low(Username, MyTerms)->
     ?LOG_DEBUG("create expert system ~p ~n", [Username]),
     {ok, Erlog} = erlog:new(),%erlog_db_ets, list_to_atom(binary_to_list(Username)) ),                       
     %load common rules of our system    
@@ -351,6 +375,9 @@ create_expert(Username, MyTerms)->
                             { {succeed,_}, NewErl1} = erlog:prove(Goal, Erl), 
                             NewErl1 end, Erlog, MyTerms), 
     gen_server:cast(?MODULE, {create_expert, Username, FinaleErl}).
+    
+    
+    
     
 save_db()->
     gen_server:cast(?MODULE, dump_db).
@@ -424,9 +451,9 @@ lookup(Body)->
 myqueue(NameOfExport)->
     ?CONSOLE_LOG("working queue for  ~p  ~n", [NameOfExport]),
     receive 
-      {add, NameOfExport, Key, Params, Raw, Sign }->
+      {add, NameOfExport, Key, Params, Raw, _Sign }->
           case ets:lookup(?SYSTEMS, NameOfExport ) of
-             [{NameOfExport, Erlog, Pid}]->
+             [{NameOfExport, Erlog, _Pid}]->
                 ?CONSOLE_LOG("add to ~p  ~p~n", [NameOfExport, {Key, Params, Raw} ]),
                 Ets = erlang:localtime(),
                 NewEts = erws_api:format_date(Ets),%%this should be deprecated
@@ -451,7 +478,7 @@ myqueue(NameOfExport)->
 assert(NameOfExport, Key, Params, Raw, Sign)->
     assert(NameOfExport, Key, Params, Raw, Sign, 1).
 
-assert(NameOfExport, Key, Params, Raw, Sign, 0)->
+assert(_NameOfExport, Key, Params, Raw, Sign, 0)->
     %% ADDING TO DEFAULT
     MyState = api_table_holder:status(),
     ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
@@ -463,15 +490,20 @@ assert(NameOfExport, Key, Params, Raw, Sign, 1)->
     %% ADDING TO DEFAULT
     MyState = api_table_holder:status(),
     ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
-    Pid = MyState#monitor.pid, 
-    Query = <<"INSERT INTO facts", NameOfExport/binary, "(Name, Value, Sign) VALUES(?, ?, ?)">>,
-    Query2 = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
-    ok = mysql:query(Pid, Query2, [Key, Raw, Sign]),
-    ok = mysql:query(Pid, Query, [Key, Raw, Sign]),
+    case MyState#monitor.pid of
+        undefined -> undefined;
+        Pid -> 
+            Query = <<"INSERT INTO facts", NameOfExport/binary, "(Name, Value, Sign) VALUES(?, ?, ?)">>,
+            Query2 = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
+            ok = mysql:query(Pid, Query2, [Key, Raw, Sign]),
+            ok = mysql:query(Pid, Query, [Key, Raw, Sign])
+    end,
     case ets:lookup(?SYSTEMS, NameOfExport) of 
         [] -> 
             ?LOG_DEBUG("we didn't find default system ~p ~n", [NameOfExport] ),
             {fail, non_exist};
+        [{NameOfExport, slavenode, Slave}]->
+            rpc:call(Slave, ?MODULE, assert, [NameOfExport, Key, Params, Raw, Sign, 1]);
         [{_, _Erlog, PidQ}]->
             ?LOG_DEBUG("send new fact to system ~p ~n", [NameOfExport] ),
             PidQ ! { add, NameOfExport, Key, Params, Raw, Sign}
@@ -482,13 +514,18 @@ assert(Key, Params, Raw, Sign)->
     NameOfExport  = <<"">>,
     MyState = api_table_holder:status(),
     ?LOG_DEBUG("start adding to memory to ~p ~n", [{Key, Params, Raw}]),
-    Pid = MyState#monitor.pid, 
-    Query = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
-    ok = mysql:query(Pid, Query, [Key, Raw, Sign]),
+    case MyState#monitor.pid of
+        undefined -> undefined;
+        Pid -> MyState#monitor.pid, 
+            Query = <<"INSERT INTO facts(Name, Value, Sign) VALUES(?, ?, ?)">>,
+            ok = mysql:query(Pid, Query, [Key, Raw, Sign])
+    end,
     case ets:lookup(?SYSTEMS, NameOfExport) of 
         [] -> 
             ?LOG_DEBUG("we didn't find default system ~p ~n", [NameOfExport] ),
             {fail, non_exist};
+        [{NameOfExport, slavenode, Slave}]->
+            rpc:call(Slave, ?MODULE, assert, [Key, Params, Raw, Sign]);
         [{_, _Erlog, PidQ}]->
             ?LOG_DEBUG("send new fact to system ~p ~n", [NameOfExport] ),
             PidQ ! { add, NameOfExport, Key, Params, Raw, Sign}

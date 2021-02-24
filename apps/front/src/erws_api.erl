@@ -139,6 +139,9 @@ process([Expert, <<"once">>, Name],  Body, Req, State)->
             {500, json, ListJson, Req, State};
         false ->
            false_response(200, Req, State);
+        {not_found, _}->
+                ListJson = {[{<<"status">>, <<"error">>}, {<<"description">>, to_binary("Expert system does not exist") }]},
+                {404, json, ListJson, Req, State};
         Success ->
             ResultL = lists:map(fun({NameX, Val}) ->
                                           {[{to_binary(NameX),  to_binary(Val) }]}
@@ -163,6 +166,9 @@ process([ExpertName, <<"once">>],  Body, Req, State)->
               fail -> 
                     ListJson = {[{<<"status">>, <<"fail">>}]},
                     {500, json, ListJson, Req, State};
+              {not_found, _}->
+                ListJson = {[{<<"status">>, <<"error">>}, {<<"description">>, to_binary("Expert system does not exist") }]},
+                {404, json, ListJson, Req, State};
               false ->
                     {json, {[{<<"status">>, false}]}, Req, State};
               Success ->
@@ -285,7 +291,9 @@ process([<<"load">>],  Body, Req, State )->
 process([ExperSystem, <<"lookup">>],  Body, Req, State )->
     ?CONSOLE_LOG("process search from  ~p ~n",[Body]),
     List = api_table_holder:lookup(ExperSystem, Body, 60000),
-    Res = lists:map(fun([Name, Value, Ets])->   {[{<<"type">>, Name}, {<<"value">>, json_decode(Value)}, {<<"date">>,  list_to_binary(format_date(Ets)) }]}   end,  List),
+    Res = lists:map(fun([Name, Value, Ets])->   {[{<<"type">>, Name}, 
+                                                {<<"value">>, json_decode(Value)},
+                                                {<<"date">>,  list_to_binary(format_date(Ets)) }]}   end,  List),
     ListJson = {[{<<"status">>, true}, {<<"result">>, Res}]},
     {json, ListJson, Req, State}
 ;

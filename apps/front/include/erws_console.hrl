@@ -35,7 +35,8 @@
                  db_loaded=false,
                  systems=[],
                  current_version,
-		 timer 
+		 timer,
+		 slaves=[]
                 }).
 
 
