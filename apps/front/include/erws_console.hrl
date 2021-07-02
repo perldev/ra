@@ -29,6 +29,7 @@
 
 -record(monitor,{
                  pid,
+                 pid1,
                  erlog, 
                  erlog1, 
                  dump_name=undefined,

@@ -3,7 +3,8 @@
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([start_link/0, stop/0, 
-         status/0, assert/4,
+         status/0,
+         assert/4,
          assert/5,
          assert/6,
          lookup/1,
@@ -44,6 +45,20 @@ init([]) ->
      {ok, Timer} = timer:apply_after(800, ?MODULE, cast_post_init, []),
      {ok, #monitor{timer=Timer}} 
 .
+
+mysql_source1(NameOF)->
+    {ok, Host} = application:get_env(ra, mysql_host1),
+    {ok, User} = application:get_env(ra, mysql_user1),
+    {ok, Db} = application:get_env(ra, mysql_db1),
+    {ok, Pwd} = application:get_env(ra, mysql_pwd1),
+    {ok, Pid} = mysql:start_link([{host,  Host},
+                                  {user, User},
+                                  {password, Pwd},
+                                  {database, Db}]),
+    register(NameOF, Pid)
+
+.
+
 
             
 start_queues()->
@@ -132,17 +147,27 @@ handle_cast(post_init, _State) ->
                     Pid1;
                 _ -> undefined
             end,
-        {ok, Slaves} = application:get_env(slaves, []),
+        {ok, Nameof} = application:get_env(ra, mysql_extended_info),
+        Pid2 = mysql_source1(Nameof),
+        
+        Slaves = application:get_env(ra, slaves, []),
+    
+        
         {ok, Erlog} = erlog:new(erlog_db_ets, ?ETS_NAME),
+        
         ets:new(?UNIQ, [public, set, named_table]),
+        
         ets:new(?STAT, [public, set, named_table]),
+        
         case   application:get_env(dump_name) of 
            undefined->
                 ets:new(?SYSTEMS, [public, set, named_table]),
                 {ok, Erlog1} = erlog:new(),
                 ets:insert(?SYSTEMS, {"", Erlog1}), %empty key for default expert system
                 start_queues(),
-                {noreply, #monitor{pid=Pid, 
+                {noreply, #monitor{
+                              pid=Pid, 
+                              pid1=Pid2,
                               erlog=Erlog,
                               erlog1=Erlog1,
                               slaves=Slaves
@@ -157,20 +182,22 @@ handle_cast(post_init, _State) ->
                         ets:insert(?SYSTEMS, {"", Erlog1 }), %empty key for default expert system
                         start_queues(),
                         {noreply, #monitor{pid=Pid, 
-                                      erlog=Erlog,
-                                      erlog1 = Erlog1,
-                                      dump_name=DumpName,
-                                      slaves=Slaves,
-                                      db_loaded=true
+                                           pid1=Pid2,
+                                           erlog=Erlog,
+                                           erlog1 = Erlog1,
+                                           dump_name=DumpName,
+                                           slaves=Slaves,
+                                           db_loaded=true
                                       }
                         };
                      [{"", Erlog1}]->                     
                        start_queues(),
                        {noreply, #monitor{pid=Pid, 
-                                     erlog=Erlog,
-                                     erlog1 = Erlog1,
-                                     dump_name=DumpName,
-                                     slaves=Slaves,
+                                          pid1=Pid2,
+                                          erlog=Erlog,
+                                          erlog1 = Erlog1,
+                                          dump_name=DumpName,
+                                          slaves=Slaves,
                                      db_loaded=true
                                     }
                         };
@@ -178,6 +205,7 @@ handle_cast(post_init, _State) ->
                        start_queues(),
                        {noreply, #monitor{pid=Pid, 
                                      erlog=Erlog,
+                                     pid1=Pid2,
                                      erlog1 = Erlog1,
                                      dump_name=DumpName,
                                      slaves=Slaves,
